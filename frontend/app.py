@@ -2,7 +2,9 @@
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import html
+from dash import html, Input, Output, callback
+
+from frontend.layout import make_layout
 
 app = dash.Dash(
     __name__,
@@ -13,43 +15,39 @@ app = dash.Dash(
 )
 
 server = app.server
+app.layout = make_layout()
 
-app.layout = dbc.Container(
-    [
-        dbc.Navbar(
-            dbc.Container(
-                dbc.NavbarBrand("medMonitor", className="ms-2"),
-                fluid=True,
-            ),
-            color="dark",
-            dark=True,
-            className="mb-4",
-        ),
-        dbc.Row(
-            dbc.Col(
-                dbc.Card(
-                    dbc.CardBody(
-                        [
-                            html.H4("Sistema in configurazione", className="card-title"),
-                            html.P(
-                                "Backend API: http://localhost:8000/docs",
-                                className="card-text",
-                            ),
-                            html.P(
-                                "Frontend attivo sulla porta 8050.",
-                                className="card-text text-muted",
-                            ),
-                        ]
-                    ),
-                ),
-                width=6,
-                className="mx-auto",
-            ),
-        ),
-    ],
-    fluid=True,
-    className="py-3",
+# Import callbacks to register them
+import frontend.callbacks.dashboard_callbacks  # noqa: F401
+
+
+# Page routing
+@callback(
+    Output("page-content", "children"),
+    Input("url", "pathname"),
 )
+def display_page(pathname):
+    if pathname == "/" or pathname is None:
+        from frontend.pages.dashboard import layout
+        return layout()
+    elif pathname == "/storico":
+        from frontend.pages.history import layout
+        return layout()
+    elif pathname == "/allarmi":
+        from frontend.pages.alerts import layout
+        return layout()
+    elif pathname == "/impostazioni":
+        from frontend.pages.settings import layout
+        return layout()
+    else:
+        return html.Div(
+            [
+                html.H4("404 — Pagina non trovata"),
+                html.P(f"Il percorso '{pathname}' non esiste."),
+            ],
+            className="text-center mt-5",
+        )
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=8050)
