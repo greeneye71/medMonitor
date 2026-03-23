@@ -7,8 +7,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import settings
+from backend.dependencies import close_db
 from backend.routers import config as config_router
 from backend.routers import thresholds as thresholds_router
+from backend.routers import readings as readings_router
+from backend.routers import sensors as sensors_router
+from backend.routers import alerts as alerts_router
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -24,13 +28,14 @@ async def lifespan(app: FastAPI):
         settings.database_backend,
     )
     yield
+    await close_db()
     logger.info("medMonitor backend shutting down")
 
 
 app = FastAPI(
     title=settings.app_name,
     description="Monitoraggio temperatura ZigBee per celle frigorifere",
-    version="0.1.0",
+    version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -44,9 +49,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 app.include_router(config_router.router)
 app.include_router(thresholds_router.router)
+app.include_router(readings_router.router)
+app.include_router(sensors_router.router)
+app.include_router(alerts_router.router)
 
 
 @app.get("/api/health")
@@ -56,4 +63,5 @@ async def health_check():
         "status": "ok",
         "app_name": settings.app_name,
         "database_backend": settings.database_backend,
+        "version": "0.2.0",
     }
