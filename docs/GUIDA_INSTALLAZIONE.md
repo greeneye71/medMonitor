@@ -1,6 +1,6 @@
 # Guida all'installazione — medMonitor
 
-Questa guida accompagna passo-passo l'installazione di medMonitor su un PC Windows.
+Questa guida accompagna passo-passo l'installazione di medMonitor su **Windows** o **Linux**.
 Al termine avrai il sistema funzionante con dashboard accessibile dal browser.
 
 ---
@@ -15,8 +15,9 @@ Al termine avrai il sistema funzionante con dashboard accessibile dal browser.
 6. [Primo avvio](#6-primo-avvio)
 7. [Verifica del funzionamento](#7-verifica-del-funzionamento)
 8. [Collegamento hardware (sensori ZigBee)](#8-collegamento-hardware)
-9. [Aggiornamento](#9-aggiornamento)
-10. [Risoluzione problemi](#10-risoluzione-problemi)
+9. [Avvio automatico (servizio di sistema)](#9-avvio-automatico)
+10. [Aggiornamento](#10-aggiornamento)
+11. [Risoluzione problemi](#11-risoluzione-problemi)
 
 ---
 
@@ -24,7 +25,7 @@ Al termine avrai il sistema funzionante con dashboard accessibile dal browser.
 
 | Componente | Requisito minimo |
 |---|---|
-| Sistema operativo | Windows 10 o Windows 11 |
+| Sistema operativo | Windows 10/11 oppure Linux (Ubuntu 22.04+, Debian 12+, RHEL 9+) |
 | RAM | 4 GB (consigliati 8 GB) |
 | Disco | 10 GB liberi |
 | Connessione di rete | LAN (per comunicare con il gateway ZigBee) |
@@ -33,6 +34,9 @@ Al termine avrai il sistema funzionante con dashboard accessibile dal browser.
 ## 2. Installazione dei prerequisiti
 
 ### 2.1 Python 3.11 o superiore
+
+<details>
+<summary><strong>Windows</strong></summary>
 
 1. Vai su https://www.python.org/downloads/
 2. Scarica l'ultima versione di Python 3.x (3.11 o superiore)
@@ -46,9 +50,46 @@ python --version
 ```
 Dovresti vedere `Python 3.11.x` o superiore.
 
+</details>
+
+<details>
+<summary><strong>Linux (Ubuntu / Debian)</strong></summary>
+
+```bash
+sudo apt update
+sudo apt install python3 python3-venv python3-pip -y
+```
+
+Per verificare:
+```bash
+python3 --version
+```
+Dovresti vedere `Python 3.11.x` o superiore.
+
+> **Nota:** Su Ubuntu 22.04 Python 3.10 e preinstallato. Se serve 3.11+:
+> ```bash
+> sudo add-apt-repository ppa:deadsnakes/ppa -y
+> sudo apt update
+> sudo apt install python3.11 python3.11-venv -y
+> ```
+
+</details>
+
+<details>
+<summary><strong>Linux (RHEL / Fedora / Rocky)</strong></summary>
+
+```bash
+sudo dnf install python3.11 python3.11-pip -y
+```
+
+</details>
+
 ### 2.2 Mosquitto MQTT Broker
 
 Mosquitto e il servizio che riceve i dati dai sensori ZigBee.
+
+<details>
+<summary><strong>Windows</strong></summary>
 
 1. Vai su https://mosquitto.org/download/
 2. Scarica **Windows 64-bit** (file `.exe`)
@@ -63,7 +104,7 @@ Lo stato deve essere `RUNNING`.
 
 **Configurazione Mosquitto** (opzionale ma consigliata):
 
-Apri il file `C:\Program Files\mosquitto\mosquitto.conf` con un editor di testo (tasto destro > "Apri con" > Blocco note) e assicurati che contenga:
+Apri il file `C:\Program Files\mosquitto\mosquitto.conf` con un editor di testo e assicurati che contenga:
 ```
 listener 1883
 allow_anonymous true
@@ -74,18 +115,78 @@ net stop mosquitto
 net start mosquitto
 ```
 
+</details>
+
+<details>
+<summary><strong>Linux (Ubuntu / Debian)</strong></summary>
+
+```bash
+sudo apt install mosquitto mosquitto-clients -y
+```
+
+Il servizio si avvia automaticamente. Per verificare:
+```bash
+sudo systemctl status mosquitto
+```
+
+**Configurazione Mosquitto** (opzionale ma consigliata):
+
+```bash
+sudo nano /etc/mosquitto/conf.d/medmonitor.conf
+```
+Inserisci:
+```
+listener 1883
+allow_anonymous true
+```
+Riavvia:
+```bash
+sudo systemctl restart mosquitto
+```
+
+</details>
+
+<details>
+<summary><strong>Linux (RHEL / Fedora / Rocky)</strong></summary>
+
+```bash
+sudo dnf install mosquitto -y
+sudo systemctl enable --now mosquitto
+```
+
+La configurazione e identica a Ubuntu (file in `/etc/mosquitto/conf.d/`).
+
+</details>
+
 ### 2.3 Git (opzionale)
 
-Se vuoi scaricare il progetto da GitHub:
+<details>
+<summary><strong>Windows</strong></summary>
+
 1. Vai su https://git-scm.com/downloads/win
 2. Scarica e installa con le opzioni predefinite
+
+</details>
+
+<details>
+<summary><strong>Linux</strong></summary>
+
+```bash
+# Ubuntu / Debian
+sudo apt install git -y
+
+# RHEL / Fedora
+sudo dnf install git -y
+```
+
+</details>
 
 In alternativa puoi scaricare il progetto come file ZIP (vedi sezione 3).
 
 ## 3. Download del progetto
 
 ### Opzione A — Con Git (consigliata)
-```
+```bash
 git clone https://github.com/greeneye71/medMonitor.git
 cd medMonitor
 ```
@@ -93,39 +194,56 @@ cd medMonitor
 ### Opzione B — Download ZIP
 1. Vai su https://github.com/greeneye71/medMonitor
 2. Clicca il pulsante verde **"Code"** > **"Download ZIP"**
-3. Estrai il file ZIP in una cartella a tua scelta (es. `C:\medMonitor`)
-4. Apri un terminale e vai nella cartella:
+3. Estrai il file ZIP in una cartella a tua scelta
+
+**Windows:**
 ```
 cd C:\medMonitor
+```
+
+**Linux:**
+```bash
+cd ~/medMonitor
 ```
 
 ## 4. Configurazione iniziale
 
 ### 4.1 Creare l'ambiente virtuale Python
 
-L'ambiente virtuale isola le dipendenze di medMonitor dal resto del sistema:
+L'ambiente virtuale isola le dipendenze di medMonitor dal resto del sistema.
+
+**Windows:**
 ```
 python -m venv venv
 venv\Scripts\activate
 ```
+
+**Linux:**
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
 Il prompt del terminale mostrera `(venv)` all'inizio della riga.
 
 ### 4.2 Installare le dipendenze
-```
+```bash
 pip install -r requirements.txt
 ```
 L'installazione dura circa 1-2 minuti. Al termine vedrai un messaggio tipo "Successfully installed...".
 
 ### 4.3 Creare il file di configurazione
 
-Copia il file di esempio:
+**Windows:**
 ```
 copy .env.example .env
+notepad .env
 ```
 
-Apri `.env` con un editor di testo:
-```
-notepad .env
+**Linux:**
+```bash
+cp .env.example .env
+nano .env
 ```
 
 **Parametri da configurare subito:**
@@ -202,7 +320,7 @@ IMAP_PASSWORD=password
 
 ## 6. Primo avvio
 
-### Avvio rapido con script
+### Windows — Avvio rapido
 
 Fai doppio clic su `start.bat` nella cartella del progetto.
 
@@ -212,21 +330,36 @@ Si apriranno due finestre di terminale:
 
 Attendi qualche secondo che entrambi i servizi si avviino.
 
-### Avvio manuale (alternativa)
+### Linux — Avvio rapido
+
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+Backend e frontend partiranno in background. Premi `Ctrl+C` per fermarli entrambi.
+
+### Avvio manuale (entrambi i sistemi)
 
 Se preferisci avviare manualmente, apri **due terminali** separati:
 
 **Terminale 1 — Backend:**
-```
-cd C:\medMonitor
-venv\Scripts\activate
+
+| Windows | Linux |
+|---|---|
+| `venv\Scripts\activate` | `source venv/bin/activate` |
+
+```bash
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 **Terminale 2 — Frontend:**
-```
-cd C:\medMonitor
-venv\Scripts\activate
+
+| Windows | Linux |
+|---|---|
+| `venv\Scripts\activate` | `source venv/bin/activate` |
+
+```bash
 python frontend/app.py
 ```
 
@@ -284,41 +417,130 @@ Puoi verificare che i messaggi MQTT arrivino usando **MQTT Explorer**:
 2. Connettiti a `localhost:1883`
 3. Dovresti vedere topic tipo `zigbee2mqtt/0x00158d...` con dati di temperatura
 
-## 9. Aggiornamento
+## 9. Avvio automatico
+
+### Linux — Servizio systemd (consigliato per produzione)
+
+Crea il file di servizio:
+
+```bash
+sudo nano /etc/systemd/system/medmonitor.service
+```
+
+Inserisci (modifica `User` e `WorkingDirectory` con i tuoi valori):
+
+```ini
+[Unit]
+Description=medMonitor Temperature Monitoring
+After=network.target mosquitto.service
+
+[Service]
+Type=forking
+User=tuoutente
+WorkingDirectory=/home/tuoutente/medMonitor
+ExecStart=/bin/bash start.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Attiva il servizio:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable medmonitor
+sudo systemctl start medmonitor
+```
+
+Comandi utili:
+```bash
+sudo systemctl status medmonitor    # stato
+sudo systemctl restart medmonitor   # riavvio
+sudo journalctl -u medmonitor -f    # log in tempo reale
+```
+
+### Windows — Avvio automatico con Operazioni Pianificate
+
+1. Apri **Utilita di pianificazione** (tasto Windows, scrivi "pianificazione")
+2. Crea attivita di base:
+   - Nome: `medMonitor`
+   - Trigger: **All'avvio del computer**
+   - Azione: **Avvia programma**
+   - Programma: `C:\medMonitor\start.bat`
+   - Directory di avvio: `C:\medMonitor`
+3. Nelle proprieta, spunta **"Esegui anche se l'utente non e connesso"**
+
+## 10. Aggiornamento
 
 Per aggiornare medMonitor a una nuova versione:
 
+**Windows:**
 ```
 cd C:\medMonitor
 git pull origin master
 venv\Scripts\activate
 pip install -r requirements.txt
 ```
-
 Poi riavvia i servizi (chiudi e riapri `start.bat`).
 
-## 10. Risoluzione problemi
+**Linux:**
+```bash
+cd ~/medMonitor
+git pull origin master
+source venv/bin/activate
+pip install -r requirements.txt
+sudo systemctl restart medmonitor
+```
+
+## 11. Risoluzione problemi
 
 ### Il backend non si avvia
 
 **Errore: `ModuleNotFoundError`**
-```
-venv\Scripts\activate
+
+| Windows | Linux |
+|---|---|
+| `venv\Scripts\activate` | `source venv/bin/activate` |
+
+```bash
 pip install -r requirements.txt
 ```
 
 **Errore: `Address already in use` (porta 8000)**
 
 Un altro processo usa la porta 8000. Trova e fermalo:
+
+**Windows:**
 ```
 netstat -ano | findstr :8000
 taskkill /PID <numero_PID> /F
+```
+
+**Linux:**
+```bash
+sudo lsof -i :8000
+sudo kill <PID>
 ```
 
 ### La dashboard non si apre
 
 - Verifica che il backend sia in esecuzione (http://localhost:8000/docs)
 - Verifica che la porta 8050 non sia bloccata dal firewall
+
+**Linux — Aprire le porte nel firewall:**
+```bash
+# UFW (Ubuntu)
+sudo ufw allow 8050/tcp
+sudo ufw allow 8000/tcp
+sudo ufw allow 1883/tcp
+
+# firewalld (RHEL/Fedora)
+sudo firewall-cmd --permanent --add-port=8050/tcp
+sudo firewall-cmd --permanent --add-port=8000/tcp
+sudo firewall-cmd --permanent --add-port=1883/tcp
+sudo firewall-cmd --reload
+```
 
 ### Non ricevo email di allarme
 
@@ -330,20 +552,31 @@ taskkill /PID <numero_PID> /F
 
 ### I sensori non appaiono nella dashboard
 
-1. Verifica che Mosquitto sia in esecuzione: `sc query mosquitto`
-2. Verifica che il gateway ZigBee sia connesso alla rete
-3. Usa MQTT Explorer per verificare che arrivino messaggi su `zigbee2mqtt/#`
-4. Controlla che `MQTT_HOST=localhost` e `MQTT_PORT=1883` in `.env`
+**Windows:**
+```
+sc query mosquitto
+```
+
+**Linux:**
+```bash
+sudo systemctl status mosquitto
+```
+
+Poi:
+1. Verifica che il gateway ZigBee sia connesso alla rete
+2. Usa MQTT Explorer per verificare che arrivino messaggi su `zigbee2mqtt/#`
+3. Controlla che `MQTT_HOST=localhost` e `MQTT_PORT=1883` in `.env`
 
 ### Backup dei dati
 
 **TinyFlux** (file locale):
-```
-copy data\temperature.db "backup_%date:~-4%%date:~3,2%%date:~0,2%.db"
-```
+
+| Windows | Linux |
+|---|---|
+| `copy data\temperature.db backup.db` | `cp data/temperature.db backup.db` |
 
 **TimescaleDB** (PostgreSQL):
-```
+```bash
 pg_dump -U medmon medmonitor > backup.sql
 ```
 
