@@ -21,6 +21,7 @@ app.layout = make_layout()
 import frontend.callbacks.dashboard_callbacks  # noqa: F401
 import frontend.callbacks.history_callbacks  # noqa: F401
 import frontend.callbacks.alerts_callbacks  # noqa: F401
+import frontend.callbacks.settings_callbacks  # noqa: F401
 
 
 # Page routing
