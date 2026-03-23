@@ -97,12 +97,12 @@ class TinyFluxAdapter(DatabaseAdapter):
                 "sensor_id": alert["sensor_id"],
                 "level": alert["level"],
                 "measurement": "alert",
+                "message": str(alert.get("message", "")),
             },
             fields={
                 "temperature": float(alert["temperature"]),
                 "threshold_min": float(alert["threshold_min"]),
                 "threshold_max": float(alert["threshold_max"]),
-                "message": str(alert.get("message", "")),
             },
         )
         self._db.insert(point)
@@ -173,6 +173,6 @@ class TinyFluxAdapter(DatabaseAdapter):
             "temperature": point.fields.get("temperature", 0.0),
             "threshold_min": point.fields.get("threshold_min", 0.0),
             "threshold_max": point.fields.get("threshold_max", 0.0),
-            "message": point.fields.get("message", ""),
+            "message": point.tags.get("message", ""),
             "timestamp": point.time,
         }
