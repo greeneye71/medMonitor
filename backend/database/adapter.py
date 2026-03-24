@@ -75,6 +75,15 @@ class DatabaseAdapter(ABC):
         """Get alert records with optional filters."""
 
     @abstractmethod
+    async def resolve_alert(self, alert_id: str) -> bool:
+        """Mark an alert as resolved.
+
+        Returns True if the alert was found and updated, False otherwise.
+        Note: TinyFlux does not support in-place updates; implementations
+        should return False gracefully if the backend does not support it.
+        """
+
+    @abstractmethod
     async def delete_demo_data(self) -> int:
         """Delete all demo data (sensor_id starting with '0xDEMO').
 

@@ -2,6 +2,7 @@
 
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -90,6 +91,7 @@ class TinyFluxAdapter(DatabaseAdapter):
 
     async def write_alert(self, alert: dict[str, Any]) -> None:
         ts = alert.get("timestamp", datetime.now(timezone.utc))
+        alert_id = alert.get("id") or str(uuid.uuid4())[:8]
         point = Point(
             time=ts,
             tags={
@@ -98,14 +100,24 @@ class TinyFluxAdapter(DatabaseAdapter):
                 "level": alert["level"],
                 "measurement": "alert",
                 "message": str(alert.get("message", "")),
+                "alert_id": alert_id,
             },
             fields={
                 "temperature": float(alert["temperature"]),
                 "threshold_min": float(alert["threshold_min"]),
                 "threshold_max": float(alert["threshold_max"]),
+                "resolved": 1 if alert.get("resolved", False) else 0,
             },
         )
         self._db.insert(point)
+
+    async def resolve_alert(self, alert_id: str) -> bool:
+        """TinyFlux does not support in-place updates — always returns False."""
+        logger.info(
+            "resolve_alert(%s): TinyFlux backend does not support in-place updates",
+            alert_id,
+        )
+        return False
 
     async def get_alerts(
         self,
@@ -167,6 +179,7 @@ class TinyFluxAdapter(DatabaseAdapter):
     @staticmethod
     def _point_to_alert(point: Point) -> dict[str, Any]:
         return {
+            "id": point.tags.get("alert_id", ""),
             "zone": point.tags.get("zone", ""),
             "sensor_id": point.tags.get("sensor_id", ""),
             "level": point.tags.get("level", ""),
@@ -175,4 +188,5 @@ class TinyFluxAdapter(DatabaseAdapter):
             "threshold_max": point.fields.get("threshold_max", 0.0),
             "message": point.tags.get("message", ""),
             "timestamp": point.time,
+            "resolved": bool(point.fields.get("resolved", 0)),
         }

@@ -1,6 +1,7 @@
 """Dashboard callbacks — update metrics, zone cards, charts every 30s."""
 
 import logging
+from datetime import datetime, timezone, timedelta
 
 import requests
 from dash import Input, Output, html, callback, no_update
@@ -43,15 +44,47 @@ def update_metrics(_n):
     fridge_color = "#6c757d"
     freezer_color = "#6c757d"
 
-    for r in latest:
-        if r.get("zone") == "fridge":
-            fridge_temp = f"{r['temperature']:.1f}°C"
-            fridge_color = "#1D9E75"
-        elif r.get("zone") == "freezer":
-            freezer_temp = f"{r['temperature']:.1f}°C"
-            freezer_color = "#1D9E75"
+    # With multiple sensors per zone, show the most extreme temperature
+    fridge_readings = [r for r in latest if r.get("zone") == "fridge"]
+    freezer_readings = [r for r in latest if r.get("zone") == "freezer"]
 
-    active_alerts = len([a for a in alerts if a.get("level") == "CRITICAL"])
+    if fridge_readings:
+        # Show highest (worst-case) temperature for fridge
+        worst_fridge = max(fridge_readings, key=lambda r: r["temperature"])
+        fridge_temp = f"{worst_fridge['temperature']:.1f}°C"
+        fridge_color = "#1D9E75"
+
+    if freezer_readings:
+        # Show highest (warmest = worst-case) temperature for freezer
+        worst_freezer = max(freezer_readings, key=lambda r: r["temperature"])
+        freezer_temp = f"{worst_freezer['temperature']:.1f}°C"
+        freezer_color = "#1D9E75"
+
+    # "Allarmi attivi" = CRITICAL alerts in the last 24 h that have not been resolved.
+    # This prevents the counter from monotonically increasing with historical records.
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    def _is_recent(a: dict) -> bool:
+        ts = a.get("timestamp")
+        if not ts:
+            return False
+        if isinstance(ts, str):
+            try:
+                # ISO-8601 string from API (Python 3.11 fromisoformat handles Z suffix)
+                ts_str = ts.replace("Z", "+00:00")
+                ts = datetime.fromisoformat(ts_str)
+            except ValueError:
+                return True  # assume recent if unparseable
+        if hasattr(ts, "tzinfo") and ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts >= cutoff
+
+    active_alerts = len([
+        a for a in alerts
+        if a.get("level") == "CRITICAL"
+        and not a.get("resolved", False)
+        and _is_recent(a)
+    ])
     alert_color = "#E24B4A" if active_alerts > 0 else "#1D9E75"
 
     return (
@@ -70,21 +103,28 @@ def update_metrics(_n):
 def update_zone_cards(_n):
     latest = _fetch("/readings/latest")
     thresholds_data = _fetch("/thresholds")
+    sensor_status = _fetch("/sensors/status")
+    if not isinstance(sensor_status, dict):
+        sensor_status = {}
 
-    cards = [html.Div(), html.Div()]
+    # Level priority for picking the "worst" sensor per zone
+    PRIORITY = {"ok": 0, "warning": 1, "critical": 2}
+
+    # zone_name -> (reading, eff_min, eff_max, status_str, has_override)
+    zone_worst: dict[str, tuple] = {}
 
     for r in latest:
         zone_name = r.get("zone", "")
         sensor_id = r.get("sensor_id", "")
         temp = r.get("temperature", 0)
 
-        # Get effective thresholds
+        # Resolve effective thresholds
         eff_min, eff_max = 0.0, 30.0
         has_override = False
         if isinstance(thresholds_data, dict):
-            sensors = thresholds_data.get("sensors", {})
-            if sensor_id in sensors:
-                s = sensors[sensor_id]
+            sensors_th = thresholds_data.get("sensors", {})
+            if sensor_id in sensors_th:
+                s = sensors_th[sensor_id]
                 eff_min = s.get("effective_min", 0)
                 eff_max = s.get("effective_max", 30)
                 has_override = s.get("override", False)
@@ -94,18 +134,26 @@ def update_zone_cards(_n):
                 eff_min = d.get("min", 0)
                 eff_max = d.get("max", 30)
 
-        # Determine status
-        if temp < eff_min or temp > eff_max:
-            status = "critical"
-        else:
-            status = "ok"
+        # Determine status: prefer DB-backed alert level, fall back to threshold check
+        raw = sensor_status.get(sensor_id, "").lower()
+        if raw not in ("warning", "critical"):
+            # No recent alert recorded — derive from current temperature
+            if temp < eff_min or temp > eff_max:
+                raw = "warning"  # out of range but alert not yet escalated
+            else:
+                raw = "ok"
 
+        existing = zone_worst.get(zone_name)
+        if existing is None or PRIORITY.get(raw, 0) > PRIORITY.get(existing[3], 0):
+            zone_worst[zone_name] = (r, eff_min, eff_max, raw, has_override)
+
+    cards = [html.Div(), html.Div()]
+    for zone_name, (r, eff_min, eff_max, status, has_override) in zone_worst.items():
         label = "Frigorifero" if zone_name == "fridge" else "Freezer"
-        card = zone_card(label, temp, eff_min, eff_max, status, sensor_id, has_override)
-
+        card = zone_card(label, r["temperature"], eff_min, eff_max, status, r["sensor_id"], has_override)
         if zone_name == "fridge":
             cards[0] = card
-        else:
+        elif zone_name == "freezer":
             cards[1] = card
 
     return cards[0], cards[1]

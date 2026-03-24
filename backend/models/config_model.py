@@ -44,7 +44,7 @@ class ThresholdsConfig(BaseModel):
 
 class SmtpConfig(BaseModel):
     """SMTP email configuration."""
-    host: str = "smtp.example.com"
+    host: str = ""
     port: int = 587
     use_tls: bool = True
     user: str = ""

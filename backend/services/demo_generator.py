@@ -10,12 +10,17 @@ from backend.dependencies import get_db
 
 logger = logging.getLogger(__name__)
 
-# Speed multipliers: how many simulated minutes pass per real second
+# Speed multipliers: fraction of real time per simulated step (1 step = 10 sim minutes).
+# interval = 10 * 60 * speed_factor  →  seconds between readings
+#   1x:   600s  (10 min real  = 10 min sim  — real-time)
+#   10x:   60s  ( 1 min real  = 10 min sim  — 10× faster)
+#   60x:   10s  (10 sec real  = 10 min sim  — 60× faster)
+#   600x:   1s  ( 1 sec real  = 10 min sim  — 600× faster)
 SPEED_MAP = {
-    "1x": 1 / 600,      # 10 real minutes = 10 sim minutes
-    "10x": 1 / 60,      # 1 real minute = 10 sim minutes
-    "60x": 1 / 10,      # 10 real seconds = 10 sim minutes
-    "600x": 1.0,         # 1 real second = 10 sim minutes
+    "1x":   1.0,        # real-time
+    "10x":  1 / 10,     # 10× faster
+    "60x":  1 / 60,     # 60× faster
+    "600x": 1 / 600,    # 600× faster
 }
 
 # Base temperatures for zones

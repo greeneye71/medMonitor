@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     zigbee_gateway_ip: str = "192.168.1.100"
 
     # SMTP
-    smtp_host: str = "smtp.example.com"
+    smtp_host: str = ""
     smtp_port: int = 587
     smtp_use_tls: bool = True
     smtp_user: str = ""
@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # Demo
     demo_mode: bool = False
     demo_speed: str = "10x"
+
+    # CORS
+    cors_origins: str = "http://localhost:8050"
 
     @property
     def postgres_dsn(self) -> str:

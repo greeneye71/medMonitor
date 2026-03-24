@@ -1,4 +1,4 @@
-"""Alerts router — GET /api/alerts, POST /api/alerts/test."""
+"""Alerts router — GET /api/alerts, POST /api/alerts/test, PATCH /api/alerts/{id}/resolve."""
 
 from datetime import datetime
 
@@ -23,6 +23,23 @@ async def get_alerts(
     return await db.get_alerts(
         zone=zone, level=level, from_dt=from_dt, to_dt=to_dt, limit=limit,
     )
+
+
+@router.patch("/{alert_id}/resolve")
+async def resolve_alert(alert_id: str):
+    """Mark an alert as resolved (acknowledged by operator).
+
+    Returns resolved=True if the backend supports in-place updates (TimescaleDB).
+    TinyFlux does not support updates; the response will indicate resolved=False.
+    """
+    db = get_db()
+    updated = await db.resolve_alert(alert_id)
+    return {
+        "status": "ok" if updated else "not_updated",
+        "alert_id": alert_id,
+        "resolved": updated,
+        "note": None if updated else "Backend does not support in-place updates (TinyFlux).",
+    }
 
 
 @router.post("/test")

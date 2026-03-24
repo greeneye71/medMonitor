@@ -2,11 +2,11 @@
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
 from backend.config import settings
+from backend.paths import data_file
 from backend.models.config_model import (
     AppConfig,
     ThresholdsConfig,
@@ -19,37 +19,35 @@ from backend.models.config_model import (
 
 logger = logging.getLogger(__name__)
 
-CONFIG_JSON_PATH = Path("data/config.json")
+CONFIG_JSON_PATH = data_file("config.json")
 
 
 class ConfigService:
-    """Manages application configuration with 3-level hierarchy:
-    1. data/config.json (highest priority — UI modifications)
-    2. .env file (initial configuration)
-    3. hardcoded defaults (config.py)
+    """Manages application configuration with 2-level hierarchy:
+
+    1. .env / hardcoded defaults  (base — always re-read at startup)
+    2. data/config.json           (UI delta — ONLY explicitly changed fields)
+
+    config.json stores ONLY the delta: fields changed via the UI.
+    This guarantees that .env changes are always picked up for unmodified fields,
+    because the base is rebuilt from settings on every get_config() call.
     """
 
     def __init__(self) -> None:
-        self._config: AppConfig | None = None
+        self._delta: dict[str, Any] = {}
 
     def get_config(self) -> AppConfig:
-        """Load and return current configuration (hot reload)."""
-        self._config = self._load()
-        return self._config
+        """Load and return current configuration (hot reload each call)."""
+        return self._load()
 
     def update_config(self, patch: dict[str, Any]) -> AppConfig:
-        """Apply partial update and persist to config.json."""
-        config = self.get_config()
-        data = config.model_dump()
-
-        for key, value in patch.items():
-            if value is not None and key in data:
-                data[key] = value
-
-        self._config = AppConfig(**data)
-        self._save(self._config)
+        """Apply partial update and persist ONLY the changed fields to config.json."""
+        # Merge patch into existing delta (load delta first to preserve previous UI changes)
+        self._load_delta()
+        self._delta.update({k: v for k, v in patch.items() if v is not None})
+        self._save_delta()
         logger.info("Configuration updated: %s", list(patch.keys()))
-        return self._config
+        return self.get_config()
 
     def get_thresholds(self) -> ThresholdsConfig:
         """Return current thresholds configuration."""
@@ -61,7 +59,9 @@ class ConfigService:
         for zone, thresholds in updates.items():
             config.thresholds.defaults[zone] = thresholds
 
-        self._save(config)
+        self._load_delta()
+        self._delta["thresholds"] = config.thresholds.model_dump()
+        self._save_delta()
         logger.info("Zone defaults updated: %s", list(updates.keys()))
         return config.thresholds
 
@@ -75,7 +75,9 @@ class ConfigService:
                 setattr(sensor, key, value)
 
         config.thresholds.sensors[sensor_id] = sensor
-        self._save(config)
+        self._load_delta()
+        self._delta["thresholds"] = config.thresholds.model_dump()
+        self._save_delta()
         logger.info("Sensor threshold updated: %s", sensor_id)
         return config.thresholds
 
@@ -84,14 +86,19 @@ class ConfigService:
         config = self.get_config()
         if sensor_id in config.thresholds.sensors:
             del config.thresholds.sensors[sensor_id]
-            self._save(config)
+            self._load_delta()
+            self._delta["thresholds"] = config.thresholds.model_dump()
+            self._save_delta()
             logger.info("Sensor threshold removed: %s", sensor_id)
         return config.thresholds
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
     def _load(self) -> AppConfig:
-        """Load config with hierarchy: defaults → .env → config.json."""
-        # Start with defaults from .env / hardcoded
-        config = AppConfig(
+        """Build config from .env base, then apply UI delta from config.json."""
+        base = AppConfig(
             app_name=settings.app_name,
             app_theme=settings.app_theme,
             log_level=settings.log_level,
@@ -132,26 +139,38 @@ class ConfigService:
             ),
         )
 
-        # Override with config.json (highest priority)
-        if CONFIG_JSON_PATH.exists():
-            try:
-                with open(CONFIG_JSON_PATH, "r", encoding="utf-8") as f:
-                    json_data = f.read().strip()
-                    if json_data:
-                        data = json.loads(json_data)
-                        config = AppConfig(**{**config.model_dump(), **data})
-                        logger.debug("Loaded config.json overrides")
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.warning("Invalid config.json, using defaults: %s", e)
+        delta = self._load_delta()
+        if not delta:
+            return base
 
-        return config
+        try:
+            merged = {**base.model_dump(), **delta}
+            return AppConfig(**merged)
+        except Exception as e:
+            logger.warning("Invalid config.json delta, using .env defaults: %s", e)
+            return base
 
-    def _save(self, config: AppConfig) -> None:
-        """Persist configuration to config.json."""
-        os.makedirs(CONFIG_JSON_PATH.parent, exist_ok=True)
-        with open(CONFIG_JSON_PATH, "w", encoding="utf-8") as f:
-            json.dump(config.model_dump(), f, indent=2, ensure_ascii=False)
-        logger.debug("Config saved to %s", CONFIG_JSON_PATH)
+    def _load_delta(self) -> dict[str, Any]:
+        """Read UI delta from config.json. Caches in self._delta."""
+        if not CONFIG_JSON_PATH.exists():
+            return {}
+        try:
+            text = CONFIG_JSON_PATH.read_text(encoding="utf-8").strip()
+            if text:
+                self._delta = json.loads(text)
+                return self._delta
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("Invalid config.json delta, ignoring: %s", e)
+        return {}
+
+    def _save_delta(self) -> None:
+        """Persist only the UI delta to config.json (never the full config)."""
+        CONFIG_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_JSON_PATH.write_text(
+            json.dumps(self._delta, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.debug("Config delta saved: %s", list(self._delta.keys()))
 
 
 # Singleton instance
