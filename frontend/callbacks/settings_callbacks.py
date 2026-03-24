@@ -151,3 +151,73 @@ def reset_demo(_n):
     result = _post("/demo/reset")
     msg = result.get("message", "Dati demo cancellati")
     return msg
+
+
+@callback(
+    Output("settings-toast", "is_open", allow_duplicate=True),
+    Input("btn-save-email", "n_clicks"),
+    State("setting-smtp-host", "value"),
+    State("setting-smtp-port", "value"),
+    State("setting-smtp-tls", "value"),
+    State("setting-smtp-user", "value"),
+    State("setting-smtp-password", "value"),
+    State("setting-smtp-recipients", "value"),
+    State("setting-imap-host", "value"),
+    State("setting-imap-port", "value"),
+    State("setting-imap-ssl", "value"),
+    State("setting-imap-user", "value"),
+    State("setting-imap-password", "value"),
+    State("setting-imap-folder", "value"),
+    prevent_initial_call=True,
+)
+def save_email(_n, smtp_host, smtp_port, smtp_tls, smtp_user, smtp_password,
+               recipients, imap_host, imap_port, imap_ssl, imap_user, imap_password, imap_folder):
+    email_config = {}
+    if smtp_host:
+        email_config["smtp"] = {
+            "host": smtp_host,
+            "port": smtp_port or 587,
+            "use_tls": bool(smtp_tls),
+            "user": smtp_user or "",
+            "password": smtp_password or "",
+        }
+    if recipients:
+        email_config["recipients"] = [r.strip() for r in recipients.split(",") if r.strip()]
+    if imap_host:
+        email_config["imap"] = {
+            "host": imap_host,
+            "port": imap_port or 993,
+            "use_ssl": bool(imap_ssl),
+            "user": imap_user or "",
+            "password": imap_password or "",
+            "folder": imap_folder or "INBOX",
+        }
+    _patch("/config", {"email": email_config})
+    return True
+
+
+@callback(
+    Output("settings-toast", "is_open", allow_duplicate=True),
+    Input("btn-save-sensors", "n_clicks"),
+    State("sensors-edit-grid", "rowData"),
+    prevent_initial_call=True,
+)
+def save_sensors(_n, row_data):
+    if not row_data:
+        return no_update
+    for row in row_data:
+        sensor_id = row.get("sensor_id")
+        if sensor_id:
+            try:
+                requests.put(
+                    f"{API_BASE}/sensors/{sensor_id}",
+                    json={
+                        "name": row.get("name", ""),
+                        "zone": row.get("zone", "fridge"),
+                        "active": row.get("active", True),
+                    },
+                    timeout=5,
+                )
+            except Exception as e:
+                logger.warning("Save sensor %s failed: %s", sensor_id, e)
+    return True

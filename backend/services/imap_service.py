@@ -1,9 +1,11 @@
 """IMAP service — monitors inbox for operator responses to alerts."""
 
+import asyncio
 import email
 import imaplib
 import logging
 import re
+from functools import partial
 from typing import Any
 
 from backend.services.config_service import config_service
@@ -37,6 +39,29 @@ class ImapService:
         if not imap_config.host or not imap_config.user:
             return []
 
+        # Run blocking IMAP operations in a thread to avoid blocking the event loop
+        raw_commands = await asyncio.to_thread(
+            self._fetch_commands_sync, imap_config
+        )
+
+        # Execute async callbacks in the event loop
+        results = []
+        for command in raw_commands:
+            results.append(command)
+            cb = self._callbacks.get(command["type"])
+            if cb:
+                try:
+                    if asyncio.iscoroutinefunction(cb):
+                        await cb(command)
+                    else:
+                        cb(command)
+                except Exception as e:
+                    logger.error("Command callback failed: %s", e)
+
+        return results
+
+    def _fetch_commands_sync(self, imap_config) -> list[dict[str, Any]]:
+        """Synchronous IMAP fetch — runs in a thread."""
         results = []
         try:
             if imap_config.use_ssl:
@@ -47,7 +72,6 @@ class ImapService:
             conn.login(imap_config.user, imap_config.password)
             conn.select(imap_config.folder)
 
-            # Search for unseen messages with medMonitor in subject
             status, message_ids = conn.search(None, '(UNSEEN SUBJECT "medMonitor")')
             if status != "OK" or not message_ids[0]:
                 conn.logout()
@@ -61,12 +85,10 @@ class ImapService:
                 raw_email = msg_data[0][1]
                 msg = email.message_from_bytes(raw_email)
 
-                # Extract text body
                 body = self._extract_body(msg)
                 if not body:
                     continue
 
-                # Parse command from first line
                 first_line = body.strip().split("\n")[0].strip().upper()
                 command = self._parse_command(first_line)
 
@@ -74,18 +96,7 @@ class ImapService:
                     command["from"] = msg.get("From", "")
                     command["subject"] = msg.get("Subject", "")
                     results.append(command)
-
-                    # Execute callback
-                    cb = self._callbacks.get(command["type"])
-                    if cb:
-                        try:
-                            await cb(command) if asyncio.iscoroutinefunction(cb) else cb(command)
-                        except Exception as e:
-                            logger.error("Command callback failed: %s", e)
-
                     logger.info("IMAP command: %s from %s", command["type"], command["from"])
-
-                    # Mark as seen
                     conn.store(msg_id, "+FLAGS", "\\Seen")
 
             conn.logout()
@@ -120,8 +131,6 @@ class ImapService:
                 return result
         return None
 
-
-import asyncio
 
 # Singleton
 imap_service = ImapService()

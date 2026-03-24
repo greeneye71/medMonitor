@@ -32,7 +32,7 @@ class TinyFluxAdapter(DatabaseAdapter):
             },
             fields={
                 "temperature": float(reading["temperature"]),
-                "humidity": float(reading["humidity"]) if reading.get("humidity") is not None else 0.0,
+                "humidity": float(reading["humidity"]) if reading.get("humidity") is not None else -1.0,
                 "battery": int(reading["battery"]) if reading.get("battery") is not None else -1,
             },
         )
@@ -159,7 +159,7 @@ class TinyFluxAdapter(DatabaseAdapter):
             "zone": point.tags.get("zone", ""),
             "sensor_id": point.tags.get("sensor_id", ""),
             "temperature": point.fields.get("temperature", 0.0),
-            "humidity": point.fields.get("humidity", 0.0) or None,
+            "humidity": h if (h := point.fields.get("humidity", -1.0)) >= 0 else None,
             "battery": battery if battery >= 0 else None,
             "timestamp": point.time,
         }

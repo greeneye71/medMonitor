@@ -8,6 +8,7 @@ import dash_bootstrap_components as dbc
 
 from frontend.components.metric_card import metric_card
 from frontend.components.zone_card import zone_card
+from frontend.components.demo_banner import demo_banner
 from frontend.components.charts import temperature_line_chart, empty_chart
 
 logger = logging.getLogger(__name__)
@@ -170,3 +171,18 @@ def update_sensors_table(_n):
         responsive=True,
         className="table-dark",
     )
+
+
+@callback(
+    Output("demo-banner-container", "children"),
+    Input("interval-30s", "n_intervals"),
+)
+def update_demo_banner(_n):
+    data = _fetch("/demo/status")
+    if isinstance(data, dict) and data.get("active"):
+        return demo_banner(
+            scenario=data.get("scenario", ""),
+            speed=data.get("speed", ""),
+            visible=True,
+        )
+    return html.Div()
