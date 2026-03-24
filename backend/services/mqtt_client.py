@@ -98,16 +98,23 @@ class MQTTClient:
             logger.warning("Failed to parse MQTT message on %s: %s", msg.topic, e)
 
     def _schedule_reconnect(self) -> None:
-        """Reconnect with exponential backoff."""
-        logger.info("Reconnecting in %ds...", self._reconnect_delay)
-        time.sleep(self._reconnect_delay)
-        self._reconnect_delay = min(self._reconnect_delay * 2, RECONNECT_MAX)
-        try:
-            self._client.reconnect()
-        except Exception as e:
-            logger.error("Reconnect failed: %s", e)
-            if self._running:
-                self._schedule_reconnect()
+        """Reconnect with exponential backoff in a separate thread."""
+        import threading
+
+        def _reconnect():
+            logger.info("Reconnecting in %ds...", self._reconnect_delay)
+            time.sleep(self._reconnect_delay)
+            self._reconnect_delay = min(self._reconnect_delay * 2, RECONNECT_MAX)
+            if not self._running:
+                return
+            try:
+                self._client.reconnect()
+            except Exception as e:
+                logger.error("Reconnect failed: %s", e)
+                if self._running:
+                    self._schedule_reconnect()
+
+        threading.Thread(target=_reconnect, daemon=True).start()
 
     @staticmethod
     def _detect_zone(payload: dict) -> str:

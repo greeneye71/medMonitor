@@ -167,8 +167,9 @@ class TimescaleAdapter(DatabaseAdapter):
         result_alerts = await pool.execute(
             "DELETE FROM alerts WHERE sensor_id LIKE '0xDEMO%'"
         )
-        count_readings = int(result_readings.split()[-1])
-        count_alerts = int(result_alerts.split()[-1])
+        # asyncpg.execute() returns command tag like "DELETE 5"
+        count_readings = int(result_readings.split()[-1]) if result_readings else 0
+        count_alerts = int(result_alerts.split()[-1]) if result_alerts else 0
         total = count_readings + count_alerts
         logger.info("Deleted %d demo records from TimescaleDB (%d readings, %d alerts)",
                      total, count_readings, count_alerts)

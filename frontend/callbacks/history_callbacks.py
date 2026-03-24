@@ -25,6 +25,17 @@ def _fetch(endpoint, params=None):
 
 
 @callback(
+    Output("history-sensor-filter", "options"),
+    Input("interval-60s", "n_intervals"),
+)
+def populate_sensor_filter(_n):
+    latest = _fetch("/readings/latest")
+    if not latest:
+        return []
+    return [{"label": r.get("sensor_id", ""), "value": r.get("sensor_id", "")} for r in latest]
+
+
+@callback(
     Output("history-chart", "figure"),
     Output("history-stats", "children"),
     Input("btn-history-search", "n_clicks"),

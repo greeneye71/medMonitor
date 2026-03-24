@@ -17,14 +17,12 @@ apscheduler==3.10.4
 
 # Email
 aiosmtplib==3.0.1
-aioimaplib==1.1.0
 jinja2==3.1.4
 
 # Frontend
 dash==2.17.0
 dash-bootstrap-components==1.6.0
 plotly==5.22.0
-dash-iconify==0.1.6
 dash-ag-grid==31.2.0
 requests==2.32.0
 
