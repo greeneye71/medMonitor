@@ -25,8 +25,11 @@ async def test_health(client):
     resp = await client.get("/api/health")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "ok"
-    assert data["app_name"] == "medMonitor"
+    assert "system" in data
+    assert "mqtt" in data
+    assert "scheduler" in data
+    assert "db" in data
+    assert data["system"]["version"] == "2.0.0"
 
 
 @pytest.mark.asyncio

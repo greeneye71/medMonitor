@@ -56,6 +56,9 @@ class MQTTClient:
         self._client.on_message = self._on_message
         self._reconnect_delay = RECONNECT_MIN
         self._running = False
+        self.health_state: str = "connecting"   # "connected"|"connecting"|"disconnected"|"error"
+        self.discovered_sensors: set[str] = set()
+        self._connected_at: float | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -65,6 +68,12 @@ class MQTTClient:
     def is_connected(self) -> bool:
         """True while the client is running (connected or reconnecting)."""
         return self._running
+
+    @property
+    def uptime_s(self) -> int:
+        if self._connected_at is None:
+            return 0
+        return int(time.time() - self._connected_at)
 
     def start(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
         """Connect to broker and start background MQTT loop thread."""
@@ -97,10 +106,14 @@ class MQTTClient:
             logger.info("MQTT connected, subscribing to zigbee2mqtt/#")
             client.subscribe("zigbee2mqtt/#")
             self._reconnect_delay = RECONNECT_MIN
+            self.health_state = "connected"
+            self._connected_at = time.time()
         else:
             logger.error("MQTT connection failed with code %d", rc)
 
     def _on_disconnect(self, client, userdata, flags, rc, properties=None) -> None:
+        self.health_state = "disconnected"
+        self._connected_at = None
         if self._running:
             logger.warning("MQTT disconnected (rc=%d), scheduling reconnect", rc)
             self._schedule_reconnect()
@@ -124,6 +137,7 @@ class MQTTClient:
             if len(parts) < 2:
                 return
             sensor_id = parts[-1]
+            self.discovered_sensors.add(sensor_id)
 
             temp = float(payload["temperature"])
             reading = {
