@@ -53,18 +53,6 @@ class ConfigService:
         """Return current thresholds configuration."""
         return self.get_config().thresholds
 
-    def update_threshold_defaults(self, updates: dict[str, ZoneThresholds]) -> ThresholdsConfig:
-        """Update zone default thresholds."""
-        config = self.get_config()
-        for zone, thresholds in updates.items():
-            config.thresholds.defaults[zone] = thresholds
-
-        self._load_delta()
-        self._delta["thresholds"] = config.thresholds.model_dump()
-        self._save_delta()
-        logger.info("Zone defaults updated: %s", list(updates.keys()))
-        return config.thresholds
-
     def update_sensor_threshold(self, sensor_id: str, patch: dict[str, Any]) -> ThresholdsConfig:
         """Update individual sensor thresholds."""
         config = self.get_config()
@@ -81,6 +69,32 @@ class ConfigService:
         logger.info("Sensor threshold updated: %s", sensor_id)
         return config.thresholds
 
+    def update_zone_color(self, zone_name: str, color: str) -> None:
+        """Persist a zone color in config.json."""
+        self._load_delta()
+        zone_colors = self._delta.get("zone_colors", {})
+        zone_colors[zone_name] = color
+        self._delta["zone_colors"] = zone_colors
+        self._save_delta()
+
+    def delete_zone_color(self, zone_name: str) -> None:
+        """Remove a zone color from config.json."""
+        self._load_delta()
+        zone_colors = self._delta.get("zone_colors", {})
+        zone_colors.pop(zone_name, None)
+        self._delta["zone_colors"] = zone_colors
+        self._save_delta()
+
+    def delete_threshold_default(self, zone_name: str) -> None:
+        """Remove a zone from thresholds.defaults in config.json."""
+        self._load_delta()
+        thresholds = self._delta.get("thresholds", {})
+        defaults = thresholds.get("defaults", {})
+        defaults.pop(zone_name, None)
+        thresholds["defaults"] = defaults
+        self._delta["thresholds"] = thresholds
+        self._save_delta()
+
     def delete_sensor_threshold(self, sensor_id: str) -> ThresholdsConfig:
         """Remove sensor-specific thresholds (revert to zone defaults)."""
         config = self.get_config()
@@ -90,6 +104,22 @@ class ConfigService:
             self._delta["thresholds"] = config.thresholds.model_dump()
             self._save_delta()
             logger.info("Sensor threshold removed: %s", sensor_id)
+        return config.thresholds
+
+    def update_threshold_defaults(self, updates: dict[str, ZoneThresholds]) -> ThresholdsConfig:
+        """Upsert zone defaults in thresholds.defaults.
+
+        Args:
+            updates: dict[str, ZoneThresholds] — zone name -> thresholds
+        """
+        config = self.get_config()
+        for zone, thresholds in updates.items():
+            config.thresholds.defaults[zone] = thresholds
+
+        self._load_delta()
+        self._delta["thresholds"] = config.thresholds.model_dump()
+        self._save_delta()
+        logger.info("Zone defaults updated: %s", list(updates.keys()))
         return config.thresholds
 
     # ------------------------------------------------------------------

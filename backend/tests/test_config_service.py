@@ -106,3 +106,22 @@ def test_config_service_delete_threshold(tmp_path, monkeypatch):
     service.update_sensor_threshold("0xDEL", {"min": 1.0, "max": 5.0, "override": True})
     thresholds = service.delete_sensor_threshold("0xDEL")
     assert "0xDEL" not in thresholds.sensors
+
+
+def test_update_zone_color(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.services.config_service.CONFIG_JSON_PATH", tmp_path / "config.json")
+    from backend.services.config_service import ConfigService
+    svc = ConfigService()
+    svc.update_zone_color("cold_room", "#a855f7")
+    cfg = svc.get_config()
+    assert cfg.zone_colors.get("cold_room") == "#a855f7"
+
+
+def test_delete_zone_color(tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.services.config_service.CONFIG_JSON_PATH", tmp_path / "config.json")
+    from backend.services.config_service import ConfigService
+    svc = ConfigService()
+    svc.update_zone_color("cold_room", "#a855f7")
+    svc.delete_zone_color("cold_room")
+    cfg = svc.get_config()
+    assert "cold_room" not in cfg.zone_colors

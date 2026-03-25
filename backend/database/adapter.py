@@ -93,3 +93,15 @@ class DatabaseAdapter(ABC):
     @abstractmethod
     async def close(self) -> None:
         """Clean up resources (close connections, files, etc.)."""
+
+    @abstractmethod
+    async def get_size_mb(self) -> float:
+        """Return approximate database size in megabytes."""
+
+    @abstractmethod
+    async def delete_readings_before(self, dt: datetime) -> int:
+        """Delete readings older than dt. Return count of deleted rows."""
+
+    @abstractmethod
+    async def delete_alerts_before(self, dt: datetime) -> int:
+        """Delete alerts older than dt. Return count of deleted rows."""

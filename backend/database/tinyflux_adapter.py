@@ -164,6 +164,26 @@ class TinyFluxAdapter(DatabaseAdapter):
         self._db.close()
         logger.info("TinyFlux adapter closed")
 
+    async def get_size_mb(self) -> float:
+        try:
+            return os.path.getsize(self._db_path) / 1_048_576
+        except OSError:
+            return 0.0
+
+    async def delete_readings_before(self, dt: datetime) -> int:
+        tag_q = TagQuery()
+        time_q = TimeQuery()
+        query = (tag_q.measurement == "temperature") & (time_q < dt)
+        removed = self._db.remove(query)
+        return removed if isinstance(removed, int) else len(removed)
+
+    async def delete_alerts_before(self, dt: datetime) -> int:
+        tag_q = TagQuery()
+        time_q = TimeQuery()
+        query = (tag_q.measurement == "alert") & (time_q < dt)
+        removed = self._db.remove(query)
+        return removed if isinstance(removed, int) else len(removed)
+
     @staticmethod
     def _point_to_reading(point: Point) -> dict[str, Any]:
         battery = point.fields.get("battery", -1)
