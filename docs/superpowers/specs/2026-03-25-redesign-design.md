@@ -91,7 +91,7 @@ Ogni zona riceve automaticamente un colore base dall'array: `[#22c55e, #3b82f6, 
 
 **Struttura verticale:**
 
-1. **Zone cards** — griglia dinamica (1 card per zona, `auto-fill minmax(280px, 1fr)`). Ogni card:
+1. **Zone cards** — griglia dinamica costruita da `GET /api/zones` (1 card per zona, `auto-fill minmax(280px, 1fr)`). Ogni card:
    - Header: nome zona (uppercase, small) + badge stato (OK/WARNING/CRITICAL)
    - Temperatura prominente (font-size 36px, font-weight 800, colore semantico)
    - Sensori della zona: lista compatta con ultima temp + icona batteria
@@ -135,8 +135,9 @@ Ogni zona riceve automaticamente un colore base dall'array: `[#22c55e, #3b82f6, 
 - Pulsante "Aggiungi manualmente" (apre modal con form: sensor_id, nome, zona)
 
 **Tab 2 — Soglie:**
-- Per ogni zona esistente: RangeSlider (min/max temperatura), mini-grafico live con threshold bands
-- Pulsante "Aggiungi zona" (input nome zona, scelta colore)
+- Zone caricate da `GET /api/zones`. Per ogni zona: RangeSlider (min/max), mini-grafico live con threshold bands.
+- Pulsante "Aggiungi zona": modal con input nome zona, selettore colore, min/max. Salva via `POST /api/zones`.
+- Pulsante elimina zona (icona cestino): `DELETE /api/zones/{name}`. Disabilitato se sensori assegnati.
 
 **Tab 3 — Email / Alert:**
 - SMTP (host, porta, TLS, user, password, destinatari) + Test invio
@@ -152,6 +153,8 @@ Ogni zona riceve automaticamente un colore base dall'array: `[#22c55e, #3b82f6, 
 
 **UX:** ogni tab ha il proprio pulsante Salva. Toast di conferma auto-dismiss 3s. Validazione inline sui campi.
 
+**Nota:** il tab Database (backend switching TinyFlux↔TimescaleDB + migrazione) presente nella v1 viene rimosso intenzionalmente da Impostazioni e non appare in nessuna pagina v2. La scelta del database rimane configurabile solo via variabile d'ambiente `DATABASE_BACKEND` — operazione da sysadmin, non da utente UI.
+
 ### 4.5 Sistema (nuova pagina)
 
 **Layout a 3 colonne:**
@@ -160,8 +163,9 @@ Ogni zona riceve automaticamente un colore base dall'array: `[#22c55e, #3b82f6, 
 - Card per ogni servizio (MQTT, APScheduler, Database):
   - Dot colorato + nome + stato testuale
   - Uptime (es. "attivo da 4h 12m")
-  - Pulsanti: Stop (se attivo) / Start (se fermo) / Restart (sempre)
-  - Dettagli tecnici espandibili (es. broker address per MQTT, next_run per Scheduler, pool size per DB)
+  - MQTT e Scheduler: pulsanti Stop (se attivo) / Start (se fermo) / Restart (sempre)
+  - Database: solo pulsante Restart (stop/start del pool non supportato)
+  - Dettagli tecnici espandibili (es. broker address per MQTT, next_run per Scheduler)
 
 **Colonna 2 — Log (flex:2):**
 - Pannello terminale scuro (`#0f172a`), font monospace 11px
@@ -171,51 +175,102 @@ Ogni zona riceve automaticamente un colore base dall'array: `[#22c55e, #3b82f6, 
 - Aggiornamento ogni 5s via polling
 
 **Colonna 3 — Metriche (flex:1):**
-- Uptime sistema (dalla prima lettura in DB o dal boot)
+- Uptime sistema (da `system.started_at` restituito da `GET /api/health`)
 - Letture/ora (media ultima ora)
 - Allarmi ultimi 7 giorni
-- Dimensione database
-- Versione backend
+- Dimensione database (da `db.size_mb` in `/api/health`)
+- Versione backend (da `system.version` in `/api/health`)
 
 ---
 
 ## 5. Modifiche backend
 
-### 5.1 Nuovi endpoint
+### 5.1 Endpoint nuovi e modificati
 
+**ESTESO** (esiste già in `main.py`, viene spostato in `routers/health.py` e arricchito):
 ```
 GET  /api/health
-     → { mqtt: {status, uptime_s, broker}, scheduler: {status, uptime_s, next_run},
-          db: {status, uptime_s, backend, size_mb} }
+     → {
+         system: { started_at: ISO8601, uptime_s: int, version: str },
+         mqtt:      { status: "connected"|"connecting"|"disconnected"|"error",
+                      uptime_s: int, broker: str },
+         scheduler: { status: "running"|"stopped"|"error",
+                      uptime_s: int, next_run: ISO8601|null },
+         db:        { status: "ok"|"degraded"|"error",
+                      uptime_s: int, backend: "tinyflux"|"timescale", size_mb: float }
+       }
+     Nota: rimuovere l'implementazione semplice esistente in main.py e registrare questo router.
+```
 
+**NUOVI** in `routers/health.py`:
+```
 POST /api/services/mqtt/restart
-POST /api/services/scheduler/restart
-POST /api/services/db/restart
 POST /api/services/mqtt/stop
 POST /api/services/mqtt/start
-     (idem per scheduler)
 
-GET  /api/logs?level=INFO&limit=200
-     → [{ timestamp, level, service, message }]
+POST /api/services/scheduler/restart
+POST /api/services/scheduler/stop
+POST /api/services/scheduler/start
 
+POST /api/services/db/restart
+     Nota: Database NON supporta stop/start (pool sempre attivo).
+     Solo restart (richiude e riapre il pool di connessione).
+```
+
+**NUOVO** in `routers/logs.py`:
+```
+GET  /api/logs?level=ALL|INFO|WARNING|ERROR&limit=200
+     → [{ timestamp: ISO8601, level: str, service: str, message: str }]
+```
+
+**NUOVI/MODIFICATI** in `routers/sensors.py` (registrare `/discovered` PRIMA del path parametrico `/{sensor_id}` per evitare conflitti FastAPI):
+```
 GET  /api/sensors/discovered
-     → sensori rilevati via MQTT ma non ancora in sensors.json
+     → [{ sensor_id: str, first_seen: ISO8601, last_seen: ISO8601, last_temp: float|null }]
+     Nota: sensori rilevati via MQTT non ancora in sensors.json.
 
 POST /api/sensors/{id}/accept
-     body: { name, zone }
-     → registra sensore in sensors.json
+     body: { name: str, zone: str, min: float|null, max: float|null }
+     → Passo 1: upsert sensore in sensors.json (riusa logica di PUT /api/sensors/{id}).
+       Passo 2: se min/max forniti, aggiunge override in thresholds.sensors via
+                config_service.update_sensor_threshold(). Le due scritture su config.json
+                sono sequenziali non atomiche — in caso di errore al passo 2 il sensore
+                risulta registrato senza override (comportamento accettabile).
+     Naming: usa min/max (coerente con ZoneThresholds e SensorThresholdPatch esistenti).
 
 DELETE /api/sensors/{id}
-     → rimuove sensore da sensors.json
+     → rimuove sensore da sensors.json e da thresholds.sensors (se presente).
+       I dati storici (readings, alerts) vengono conservati nel DB. La UI mostra il
+       sensor_id grezzo per le letture orfane (senza nome risolto).
 ```
+
+**NUOVO** in `routers/config.py` (gestione zone):
+```
+GET  /api/zones
+     → [{ name: str, color: str, threshold_min: float, threshold_max: float }]
+     Nota: zone da thresholds.defaults; colori da AppConfig.zone_colors (dict[str,str]).
+
+POST /api/zones
+     body: { name: str, color: str, threshold_min: float, threshold_max: float }
+     → aggiunge voce in thresholds.defaults E in zone_colors, scrive config.json.
+
+DELETE /api/zones/{name}
+     → rimuove da thresholds.defaults e zone_colors. Errore 409 se sensori assegnati.
+```
+
+**Modifiche al data model richieste:**
+- `AppConfig` aggiunge campo `zone_colors: dict[str, str] = {"fridge": "#22c55e", "freezer": "#3b82f6"}` in `config_model.py`
+- `ThresholdDefaultsPatch` in `config_model.py` deve essere reso generico: sostituire i campi hardcoded `fridge` e `freezer` con `zones: dict[str, ZoneThresholds] | None = None` per accettare zone arbitrarie.
 
 ### 5.2 Robustezza backend
 
 - **Tutti i router**: `try/except` con risposta `HTTPException` strutturata invece di crash 500
-- **MQTT client**: health state (`connected`, `connecting`, `disconnected`, `error`) esposto via `/api/health`
+- **MQTT client**: espone `health_state` (`connected`/`connecting`/`disconnected`/`error`) e `discovered_sensors` (set in memoria). Al riavvio del backend il set `discovered_sensors` riparte vuoto — i sensori vengono ri-scoperti non appena il broker invia nuovi messaggi. Non è previsto TTL né dimensione massima del set.
 - **APScheduler**: cattura eccezioni nei job, logga, non crasha il processo
 - **Config service**: validazione schema su ogni `PATCH /api/config` prima di scrivere su disco
-- **Sensor discovery**: `mqtt_client` accumula in memoria i `sensor_id` rilevati non ancora in `sensors.json` → esposti via `GET /api/sensors/discovered`
+- **Backend start_time**: aggiungere `app.state.started_at = datetime.utcnow()` nel lifespan startup di `main.py` (riga attuale non presente, deve essere inserita). Usato da `/api/health` per `system.uptime_s` e dalla pagina Sistema.
+- **Service state via app.state**: i riferimenti a `_mqtt_client` e `_scheduler` (attualmente module-level globals in `main.py`) devono essere spostati su `app.state.mqtt_client` e `app.state.scheduler` nel lifespan startup, in modo che `routers/health.py` possa accedervi via `request.app.state` senza importazioni circolari.
+- **log_collector**: implementare come `logging.Handler` personalizzato (`LogCollectorHandler`) con un `collections.deque(maxlen=1000)` thread-safe. Aggiungere l'handler al logger root in `main.py`. Ogni `LogRecord` viene convertito in `{timestamp, level, service, message}` dove `service = record.name` (nome del logger). `GET /api/logs` legge dal deque via `request.app.state.log_collector`.
 
 ### 5.3 Frontend resilienza
 
@@ -230,6 +285,12 @@ DELETE /api/sensors/{id}
 ```
 frontend/
   layout.py                  # MODIFICA: nuova sidebar 220px, dot status bottom
+                             #   Aggiunge: dcc.Interval(id="interval-5s",  interval=5_000)
+                             #             dcc.Interval(id="interval-30s", interval=30_000) [già esiste]
+                             #             dcc.Interval(id="interval-60s", interval=60_000) [già esiste]
+                             #   interval-5s  → system_callbacks SOLO log panel (GET /api/logs)
+                             #   interval-30s → dashboard_callbacks + system_callbacks (health dots sidebar)
+                             #   interval-60s → alerts_callbacks, settings_callbacks
   pages/
     dashboard.py             # RISCRIVI: zone cards dinamiche, tabella sensori
     history.py               # MODIFICA: statistiche % fuori soglia, filtri migliorati
@@ -255,6 +316,7 @@ backend/
     health.py                # NUOVO: GET /health, POST /services/{name}/restart|stop|start
     logs.py                  # NUOVO: GET /logs
     sensors.py               # MODIFICA: GET /discovered, POST /{id}/accept, DELETE /{id}
+                             #   ATTENZIONE: registrare /discovered PRIMA di /{sensor_id}
   services/
     mqtt_client.py           # MODIFICA: health_state, discovered_sensors set
     log_collector.py         # NUOVO: buffer circolare 1000 righe di log
@@ -273,16 +335,22 @@ backend/
 
 ---
 
-## 8. Fasi di implementazione
+## 8. Prerequisiti
 
-1. **Setup e commit pending** — committa modifiche pendenti (`frontend/app.py`, `requirements.txt`), aggiunge `frontend/__init__.py`
-2. **Design system** — `assets/custom.css` con variabili CSS, nuovo tema Bootstrap, aggiorna `app.py`
-3. **Nuovo layout** — sidebar 220px ridisegnata, dot status, routing invariato
-4. **Dashboard** — zone_card v2, sensors_table, grafico light theme
-5. **Backend health API** — `routers/health.py`, `routers/logs.py`, `log_collector.py`, modifica `mqtt_client.py`
-6. **Pagina Sistema** — `pages/system.py`, `callbacks/system_callbacks.py`, componenti service_status + log_panel
-7. **Impostazioni v2** — 5 tab, sensor discovery, add zone
-8. **Storico e Allarmi** — aggiornamenti minori (statistiche, row coloring, tema)
-9. **Robustezza frontend** — wrapping try/except in tutti i callback
-10. **Robustezza backend** — error handling in tutti i router
-11. **Test** — aggiorna test esistenti, aggiunge test per nuovi endpoint
+Prima di iniziare lo sviluppo, eseguire questi passi di housekeeping sul branch corrente:
+- Committare le modifiche pendenti: `frontend/app.py`, `requirements.txt`, `frontend/__init__.py`
+- Creare il nuovo branch `feature/ui-redesign-v2` da `fix/bugfix-review`
+
+## 9. Fasi di implementazione
+
+1. **Design system** — `assets/custom.css` con variabili CSS, nuovo tema Bootstrap FLATLY, aggiorna `app.py`, aggiunge `interval-5s` in `layout.py`
+2. **Nuovo layout** — sidebar 220px ridisegnata, dot status (aggiornati da `interval-30s`), routing invariato
+3. **Backend health API** — estende `GET /api/health` in `routers/health.py`, aggiunge endpoint service controls, `routers/logs.py`, `log_collector.py`, modifica `mqtt_client.py` (health_state + discovered_sensors), registra `app.state.started_at`
+4. **Backend zone API + sensor discovery** — `GET|POST|DELETE /api/zones` in `routers/config.py`, modifica `routers/sensors.py` (discovered, accept, delete)
+5. **Dashboard** — zone_card v2 (dinamica da `/api/zones`), sensors_table, grafico light theme, resilienza API
+6. **Pagina Sistema** — `pages/system.py`, `callbacks/system_callbacks.py`, componenti service_status + log_panel, polling `interval-5s`
+7. **Impostazioni v2** — 5 tab, sensor discovery, add/delete zona
+8. **Storico e Allarmi** — statistiche % fuori soglia, row coloring, ag-theme-quartz
+9. **Robustezza frontend** — wrapping `try/except` in tutti i callback
+10. **Robustezza backend** — error handling in tutti i router restanti
+11. **Test** — aggiorna test esistenti, aggiunge test per nuovi endpoint health/zones/sensors
