@@ -12,6 +12,7 @@
 2. Aggiungere visibilità e controllo sullo stato dei servizi backend (MQTT, APScheduler, Database) direttamente dal frontend.
 3. Rendere la configurazione sensori completamente funzionante: auto-discovery via MQTT + aggiunta manuale.
 4. Aumentare la robustezza: frontend resiliente agli errori API, backend con error handling consistente, nuovi endpoint di health/control.
+5. Archiviazione automatica dei dati: letture e allarmi più vecchi di 180 giorni vengono esportati in CSV e rimossi dal database per mantenerlo piccolo.
 
 ---
 
@@ -145,7 +146,8 @@ Ogni zona riceve automaticamente un colore base dall'array: `[#22c55e, #3b82f6, 
 - Cooldown allarmi (minuti)
 
 **Tab 4 — Generale:**
-- Nome impianto, intervallo polling (minuti), retention dati (giorni)
+- Nome impianto, intervallo polling (minuti)
+- **Archiviazione**: soglia archiviazione (giorni, default 180) — dati più vecchi vengono esportati in CSV e rimossi
 
 **Tab 5 — Demo:**
 - Scenario (6 opzioni), velocità (1x/10x/60x/600x), Start/Stop/Reset
@@ -179,7 +181,9 @@ Ogni zona riceve automaticamente un colore base dall'array: `[#22c55e, #3b82f6, 
 - Letture/ora (media ultima ora)
 - Allarmi ultimi 7 giorni
 - Dimensione database (da `db.size_mb` in `/api/health`)
-- Versione backend (da `system.version` in `/api/health`)
+- Versione backend
+- **Ultima archiviazione**: data/ora + N righe archiviate (da `GET /api/archive/status`)
+- **Pulsante "Archivia ora"**: esegue archiviazione manuale immediata via `POST /api/archive/run` (da `system.version` in `/api/health`)
 
 ---
 
@@ -215,6 +219,17 @@ POST /api/services/scheduler/start
 POST /api/services/db/restart
      Nota: Database NON supporta stop/start (pool sempre attivo).
      Solo restart (richiude e riapre il pool di connessione).
+```
+
+**NUOVO** in `routers/archive.py`:
+```
+GET  /api/archive/status
+     → { last_run: ISO8601|null, last_rows_archived: int, archive_dir: str,
+          files: [{ path: str, size_mb: float, from_date: date, to_date: date }] }
+
+POST /api/archive/run
+     → avvia archiviazione sincrona (entro timeout 30s) o asincrona se > 30s.
+       Response: { status: "completed"|"running", rows_archived: int, files_written: [str] }
 ```
 
 **NUOVO** in `routers/logs.py`:
@@ -297,6 +312,16 @@ Implementazioni:
 - **MQTT client**: espone `health_state` (`connected`/`connecting`/`disconnected`/`error`) e `discovered_sensors` (set in memoria). Al riavvio del backend il set `discovered_sensors` riparte vuoto — i sensori vengono ri-scoperti non appena il broker invia nuovi messaggi. Non è previsto TTL né dimensione massima del set.
 - **APScheduler**: cattura eccezioni nei job, logga, non crasha il processo
 - **Config service**: validazione schema su ogni `PATCH /api/config` prima di scrivere su disco
+- **Archive service**: `backend/services/archive_service.py` — logica di archiviazione:
+  1. Legge soglia da `config.archive_after_days` (default 180)
+  2. Query DB: tutte le letture con `timestamp < now - archive_after_days`; idem per gli allarmi
+  3. Raggruppa per mese (YYYY-MM), scrive `data/archive/YYYY-MM/readings.csv` e `data/archive/YYYY-MM/alerts.csv`
+  4. Formato CSV readings: `timestamp,zone,sensor_id,temperature,humidity,battery`
+  5. Formato CSV alerts: `timestamp,zone,sensor_id,temperature,level,message,resolved`
+  6. Dopo scrittura verificata (file esiste + righe corrispondono), elimina dal DB le righe archiviate
+  7. Aggiorna `data/archive/archive_log.json`: `{last_run, last_rows_archived, files}`
+  8. `DatabaseAdapter` aggiunge metodo astratto `delete_readings_before(dt: datetime)` e `delete_alerts_before(dt: datetime)`
+- **APScheduler job**: aggiunge job `archive_check()` giornaliero (ore 02:00) in `main.py` lifespan
 - **Backend start_time**: aggiungere `app.state.started_at = datetime.utcnow()` nel lifespan startup di `main.py` (riga attuale non presente, deve essere inserita). Usato da `/api/health` per `system.uptime_s` e dalla pagina Sistema.
 - **Service state via app.state**: i riferimenti a `_mqtt_client` e `_scheduler` (attualmente module-level globals in `main.py`) devono essere spostati su `app.state.mqtt_client` e `app.state.scheduler` nel lifespan startup, in modo che `routers/health.py` possa accedervi via `request.app.state` senza importazioni circolari.
 - **log_collector**: implementare come `logging.Handler` personalizzato (`LogCollectorHandler`) con un `collections.deque(maxlen=1000)` thread-safe. Aggiungere l'handler al logger root in `main.py`. Ogni `LogRecord` viene convertito in `{timestamp, level, service, message}` dove `service = record.name` (nome del logger). `GET /api/logs` legge dal deque via `request.app.state.log_collector`.
@@ -344,12 +369,14 @@ backend/
   routers/
     health.py                # NUOVO: GET /health, POST /services/{name}/restart|stop|start
     logs.py                  # NUOVO: GET /logs
+    archive.py               # NUOVO: GET /archive/status, POST /archive/run
     sensors.py               # MODIFICA: GET /discovered, POST /{id}/accept, DELETE /{id}
                              #   ATTENZIONE: registrare /discovered PRIMA di /{sensor_id}
   services/
     mqtt_client.py           # MODIFICA: health_state, discovered_sensors set
     log_collector.py         # NUOVO: buffer circolare 1000 righe di log
-  main.py                    # MODIFICA: registra nuovi router
+    archive_service.py       # NUOVO: export CSV + delete DB + archive_log.json
+  main.py                    # MODIFICA: registra nuovi router, aggiunge job archive ore 02:00
 ```
 
 ---
@@ -382,4 +409,5 @@ Prima di iniziare lo sviluppo, eseguire questi passi di housekeeping sul branch 
 8. **Storico e Allarmi** — statistiche % fuori soglia, row coloring, ag-theme-quartz
 9. **Robustezza frontend** — wrapping `try/except` in tutti i callback
 10. **Robustezza backend** — error handling in tutti i router restanti
-11. **Test** — aggiorna test esistenti, aggiunge test per nuovi endpoint health/zones/sensors
+11. **Archiviazione dati** — `archive_service.py`, `routers/archive.py`, job APScheduler ore 02:00, pulsante "Archivia ora" in pagina Sistema, campo soglia in Impostazioni → Generale, metodi `delete_readings_before` / `delete_alerts_before` in entrambi gli adapter
+12. **Test** — aggiorna test esistenti, aggiunge test per nuovi endpoint health/zones/sensors/archive
