@@ -260,7 +260,36 @@ DELETE /api/zones/{name}
 
 **Modifiche al data model richieste:**
 - `AppConfig` aggiunge campo `zone_colors: dict[str, str] = {"fridge": "#22c55e", "freezer": "#3b82f6"}` in `config_model.py`
-- `ThresholdDefaultsPatch` in `config_model.py` deve essere reso generico: sostituire i campi hardcoded `fridge` e `freezer` con `zones: dict[str, ZoneThresholds] | None = None` per accettare zone arbitrarie.
+- `ThresholdDefaultsPatch` in `config_model.py` deve essere reso generico: sostituire i campi hardcoded `fridge` e `freezer` con `zones: dict[str, ZoneThresholds] | None = None` per accettare zone arbitrarie. Il router `thresholds.py` (riga 45-46) usa `patch.fridge`/`patch.freezer` direttamente — deve essere aggiornato per iterare su `patch.zones.items()`.
+
+**Persistenza zone_colors via ConfigService:**
+`config_service.py` aggiunge due metodi analoghi a `update_threshold_defaults()`:
+```python
+def update_zone_color(self, zone_name: str, color: str) -> None:
+    zone_colors = self._delta.get("zone_colors", {})
+    zone_colors[zone_name] = color
+    self._delta["zone_colors"] = zone_colors
+    self._save_delta()
+
+def delete_zone_color(self, zone_name: str) -> None:
+    zone_colors = self._delta.get("zone_colors", {})
+    zone_colors.pop(zone_name, None)
+    self._delta["zone_colors"] = zone_colors
+    self._save_delta()
+```
+`POST /api/zones` chiama `config_service.update_zone_color()` dopo aver scritto la zona in thresholds.
+`DELETE /api/zones/{name}` chiama `config_service.delete_zone_color()`.
+
+**Dimensione database via DatabaseAdapter:**
+Aggiungere metodo astratto in `backend/database/adapter.py`:
+```python
+async def get_size_mb(self) -> float: ...
+```
+Implementazioni:
+- `TinyFluxAdapter`: `os.path.getsize(self._path) / 1_048_576`
+- `TimescaleAdapter`: query `SELECT pg_database_size(current_database()) / 1048576.0`
+
+`GET /api/health` in `routers/health.py` accede al DB via `get_db()` da `dependencies.py` (non via `app.state`) — coerente con il pattern usato dagli altri router.
 
 ### 5.2 Robustezza backend
 
