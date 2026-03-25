@@ -1,15 +1,153 @@
-/* medMonitor — Custom styles */
-
+/* medMonitor v2 — Design System */
 :root {
-    --color-ok: #1D9E75;
-    --color-warning: #BA7517;
-    --color-critical: #E24B4A;
+  --mm-bg:          #f8fafc;
+  --mm-surface:     #ffffff;
+  --mm-sidebar:     #0f172a;
+  --mm-sidebar-hover: #1e293b;
+  --mm-text:        #0f172a;
+  --mm-text-muted:  #64748b;
+  --mm-text-faint:  #94a3b8;
+  --mm-ok:          #22c55e;
+  --mm-warn:        #f59e0b;
+  --mm-critical:    #ef4444;
+  --mm-info:        #3b82f6;
+  --mm-border:      #e2e8f0;
+  --mm-radius:      12px;
+  --mm-shadow:      0 1px 3px rgba(0,0,0,0.06);
 }
 
-.status-ok { color: var(--color-ok); }
-.status-warning { color: var(--color-warning); }
-.status-critical { color: var(--color-critical); }
+body {
+  background: var(--mm-bg) !important;
+  font-family: system-ui, -apple-system, sans-serif;
+}
 
-.border-ok { border-left: 3px solid var(--color-ok) !important; }
-.border-warning { border-left: 3px solid var(--color-warning) !important; }
-.border-critical { border-left: 3px solid var(--color-critical) !important; }
+/* Card base */
+.mm-card {
+  background: var(--mm-surface);
+  border-radius: var(--mm-radius);
+  box-shadow: var(--mm-shadow);
+  padding: 16px;
+  border: 1px solid var(--mm-border);
+}
+
+/* Zone card stato */
+.mm-card-ok     { border-left: 4px solid var(--mm-ok) !important; }
+.mm-card-warn   { border-left: 4px solid var(--mm-warn) !important; }
+.mm-card-critical {
+  border-left: 4px solid var(--mm-critical) !important;
+  box-shadow: 0 0 0 2px rgba(239,68,68,0.15), var(--mm-shadow) !important;
+}
+
+/* Badge stato */
+.mm-badge-ok       { background: #dcfce7; color: #166534; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+.mm-badge-warn     { background: #fef3c7; color: #92400e; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+.mm-badge-critical { background: #fee2e2; color: #991b1b; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+.mm-badge-info     { background: #dbeafe; color: #1e40af; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+.mm-badge-new      { background: #f3e8ff; color: #7e22ce; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+
+/* AG-Grid alert row colors */
+.alert-row-critical { background: #fef2f2 !important; }
+.alert-row-warning  { background: #fffbeb !important; }
+
+/* Sidebar */
+.mm-sidebar {
+  width: 220px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: var(--mm-sidebar);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  overflow-y: auto;
+}
+
+.mm-sidebar-brand {
+  padding: 16px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.3px;
+}
+
+.mm-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin: 2px 8px;
+  border-radius: 6px;
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.mm-nav-item:hover {
+  background: var(--mm-sidebar-hover);
+  color: #fff;
+  text-decoration: none;
+}
+
+.mm-nav-item.active {
+  background: var(--mm-sidebar-hover);
+  color: #fff;
+}
+
+/* Service status dots */
+.mm-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.mm-dot-ok       { background: var(--mm-ok); }
+.mm-dot-warn     { background: var(--mm-warn); }
+.mm-dot-error    { background: var(--mm-critical); }
+
+/* Log panel */
+.mm-log-panel {
+  background: #0f172a;
+  border-radius: 8px;
+  padding: 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  height: 400px;
+  overflow-y: auto;
+  color: #94a3b8;
+}
+
+.mm-log-info    { color: #94a3b8; }
+.mm-log-warning { color: #f59e0b; }
+.mm-log-error   { color: #ef4444; }
+
+/* Page header */
+.mm-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.mm-page-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--mm-text);
+}
+
+/* Main content */
+.mm-main {
+  margin-left: 220px;
+  background: var(--mm-bg);
+  min-height: 100vh;
+  padding: 24px;
+}
+
+/* Temperature display */
+.mm-temp-ok       { color: #15803d; }
+.mm-temp-warn     { color: #b45309; }
+.mm-temp-critical { color: #dc2626; }

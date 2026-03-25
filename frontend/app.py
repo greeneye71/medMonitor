@@ -8,7 +8,7 @@ from frontend.layout import make_layout
 
 app = dash.Dash(
     __name__,
-    external_stylesheets=[dbc.themes.SLATE],
+    external_stylesheets=[dbc.themes.FLATLY],
     title="medMonitor",
     update_title="medMonitor — Aggiornamento...",
     suppress_callback_exceptions=True,
