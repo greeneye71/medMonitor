@@ -1,15 +1,78 @@
-"""Config router — GET/PATCH /api/config, test-email, test-imap, switch-database."""
+"""Config router — GET/PATCH /api/config, test-email, test-imap, switch-database.
 
+Also provides /api/zones — zone CRUD endpoints.
+"""
+
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
-from backend.models.config_model import AppConfig, ConfigPatch
+from backend.models.config_model import AppConfig, ConfigPatch, ZoneThresholds
 from backend.services.config_service import config_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/config", tags=["config"])
+
+# ---------------------------------------------------------------------------
+# Zone router — /api/zones
+# ---------------------------------------------------------------------------
+
+zones_router = APIRouter(prefix="/api/zones", tags=["zones"])
+
+
+class ZoneCreate(BaseModel):
+    name: str
+    color: str
+    threshold_min: float
+    threshold_max: float
+
+
+@zones_router.get("")
+async def list_zones():
+    """List all zones with thresholds and colors."""
+    cfg = config_service.get_config()
+    result = []
+    for zone_name, zone_thresh in cfg.thresholds.defaults.items():
+        result.append({
+            "name": zone_name,
+            "color": cfg.zone_colors.get(zone_name, "#64748b"),
+            "threshold_min": zone_thresh.min,
+            "threshold_max": zone_thresh.max,
+        })
+    return result
+
+
+@zones_router.post("")
+async def create_or_update_zone(body: ZoneCreate):
+    """Upsert a zone with thresholds and color (create or update if already exists)."""
+    try:
+        config_service.update_threshold_defaults(
+            {body.name: ZoneThresholds(min=body.threshold_min, max=body.threshold_max)}
+        )
+        config_service.update_zone_color(body.name, body.color)
+        return {"name": body.name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@zones_router.delete("/{zone_name}")
+async def delete_zone(zone_name: str):
+    """Delete a zone. Returns 409 if sensors are assigned."""
+    from backend.paths import data_file
+    sensors_file = data_file("sensors.json")
+    if sensors_file.exists():
+        sensors = json.loads(sensors_file.read_text(encoding="utf-8"))
+        if any(s.get("zone") == zone_name for s in sensors.values()):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Zone '{zone_name}' ha sensori assegnati. Riassegna prima i sensori."
+            )
+    config_service.delete_threshold_default(zone_name)
+    config_service.delete_zone_color(zone_name)
+    return {"deleted": zone_name}
 
 
 @router.get("", response_model=AppConfig)

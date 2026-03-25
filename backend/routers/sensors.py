@@ -1,15 +1,17 @@
-"""Sensors router — GET /api/sensors, PUT /api/sensors/{id}."""
+"""Sensors router — GET /api/sensors, PUT /api/sensors/{id}, plus discovery endpoints."""
 
 import json
 import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 from backend.models.reading import Sensor, SensorUpdate
 from backend.paths import data_file
 from backend.dependencies import get_db
+from backend.services.config_service import config_service
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,65 @@ async def get_sensors():
         Sensor(sensor_id=sid, **data)
         for sid, data in sensors.items()
     ]
+
+
+@router.get("/discovered")
+async def get_discovered(request: Request):
+    """List sensors detected via MQTT not yet in sensors.json."""
+    mqtt = getattr(request.app.state, "mqtt_client", None)
+    discovered = mqtt.discovered_sensors if mqtt else set()
+
+    sensors_file = data_file("sensors.json")
+    configured = set()
+    if sensors_file.exists():
+        configured = set(json.loads(sensors_file.read_text(encoding="utf-8")).keys())
+
+    # Only those not yet configured
+    new_ids = discovered - configured
+    return [{"sensor_id": sid, "first_seen": None, "last_seen": None, "last_temp": None}
+            for sid in sorted(new_ids)]
+
+
+class SensorAcceptBody(BaseModel):
+    name: str
+    zone: str
+    min: float | None = None
+    max: float | None = None
+
+
+@router.post("/{sensor_id}/accept")
+async def accept_sensor(sensor_id: str, body: SensorAcceptBody):
+    """Accept a discovered sensor: register it and optionally set thresholds."""
+    sensors_file = data_file("sensors.json")
+    sensors = {}
+    if sensors_file.exists():
+        sensors = json.loads(sensors_file.read_text(encoding="utf-8"))
+    sensors[sensor_id] = {"name": body.name, "zone": body.zone, "active": True}
+    sensors_file.parent.mkdir(parents=True, exist_ok=True)
+    sensors_file.write_text(json.dumps(sensors, indent=2), encoding="utf-8")
+
+    if body.min is not None and body.max is not None:
+        config_service.update_sensor_threshold(sensor_id, {
+            "name": body.name,
+            "zone": body.zone,
+            "min": body.min,
+            "max": body.max,
+            "override": True,
+        })
+
+    return {"accepted": sensor_id}
+
+
+@router.delete("/{sensor_id}")
+async def delete_sensor(sensor_id: str):
+    """Remove sensor from sensors.json and thresholds (data preserved in DB)."""
+    sensors_file = data_file("sensors.json")
+    if sensors_file.exists():
+        sensors = json.loads(sensors_file.read_text(encoding="utf-8"))
+        sensors.pop(sensor_id, None)
+        sensors_file.write_text(json.dumps(sensors, indent=2), encoding="utf-8")
+    config_service.delete_sensor_threshold(sensor_id)
+    return {"deleted": sensor_id}
 
 
 @router.put("/{sensor_id}", response_model=Sensor)

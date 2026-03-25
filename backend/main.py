@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.config import settings
 from backend.dependencies import close_db, get_db
 from backend.routers import config as config_router
+from backend.routers.config import zones_router
 from backend.routers import thresholds as thresholds_router
 from backend.routers import readings as readings_router
 from backend.routers import sensors as sensors_router
@@ -145,6 +146,7 @@ app.add_middleware(
 )
 
 app.include_router(config_router.router)
+app.include_router(zones_router)
 app.include_router(thresholds_router.router)
 app.include_router(readings_router.router)
 app.include_router(sensors_router.router)
