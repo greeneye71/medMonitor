@@ -88,10 +88,19 @@ class ConfigService:
     def delete_threshold_default(self, zone_name: str) -> None:
         """Remove a zone from thresholds.defaults in config.json."""
         self._load_delta()
+        # Get current effective config to see all active zones
+        current_cfg = self.get_config()
+        # Build complete defaults snapshot without the deleted zone
+        current_defaults = {}
+        if current_cfg.thresholds.defaults:
+            for zname, zthresh in current_cfg.thresholds.defaults.items():
+                if zname != zone_name:
+                    current_defaults[zname] = (
+                        zthresh.model_dump() if hasattr(zthresh, "model_dump")
+                        else {"min": zthresh.min, "max": zthresh.max}
+                    )
         thresholds = self._delta.get("thresholds", {})
-        defaults = thresholds.get("defaults", {})
-        defaults.pop(zone_name, None)
-        thresholds["defaults"] = defaults
+        thresholds["defaults"] = current_defaults
         self._delta["thresholds"] = thresholds
         self._save_delta()
 

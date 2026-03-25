@@ -41,16 +41,10 @@ async def get_thresholds():
 @router.patch("/defaults")
 async def patch_defaults(patch: ThresholdDefaultsPatch):
     """Update zone default thresholds."""
-    updates = {}
-    if patch.fridge:
-        updates["fridge"] = patch.fridge
-    if patch.freezer:
-        updates["freezer"] = patch.freezer
-
-    if not updates:
+    if not patch.zones:
         raise HTTPException(status_code=400, detail="No zone defaults to update")
 
-    thresholds = config_service.update_threshold_defaults(updates)
+    thresholds = config_service.update_threshold_defaults(patch.zones)
     return {"status": "ok", "defaults": thresholds.defaults}
 
 

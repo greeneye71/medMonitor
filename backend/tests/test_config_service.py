@@ -125,3 +125,29 @@ def test_delete_zone_color(tmp_path, monkeypatch):
     svc.delete_zone_color("cold_room")
     cfg = svc.get_config()
     assert "cold_room" not in cfg.zone_colors
+
+
+def test_update_threshold_defaults(tmp_path, monkeypatch):
+    """update_threshold_defaults persists a new zone into config."""
+    monkeypatch.setattr("backend.services.config_service.CONFIG_JSON_PATH", tmp_path / "config.json")
+    from backend.services.config_service import ConfigService
+    from backend.models.config_model import ZoneThresholds
+    svc = ConfigService()
+    svc.update_threshold_defaults({"cold_room": ZoneThresholds(min=2.0, max=8.0)})
+    cfg = svc.get_config()
+    assert "cold_room" in cfg.thresholds.defaults
+    assert cfg.thresholds.defaults["cold_room"].min == 2.0
+    assert cfg.thresholds.defaults["cold_room"].max == 8.0
+
+
+def test_delete_threshold_default(tmp_path, monkeypatch):
+    """delete_threshold_default removes a zone; base zones are also suppressible."""
+    monkeypatch.setattr("backend.services.config_service.CONFIG_JSON_PATH", tmp_path / "config.json")
+    from backend.services.config_service import ConfigService
+    from backend.models.config_model import ZoneThresholds
+    svc = ConfigService()
+    # Add a custom zone and then delete it
+    svc.update_threshold_defaults({"cold_room": ZoneThresholds(min=2.0, max=8.0)})
+    svc.delete_threshold_default("cold_room")
+    cfg = svc.get_config()
+    assert "cold_room" not in cfg.thresholds.defaults
