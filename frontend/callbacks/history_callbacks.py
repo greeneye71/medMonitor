@@ -89,7 +89,7 @@ def search_history(_n, start_date, end_date, zone, sensors):
 
     # Fetch zone thresholds and compute % out-of-range per zone
     zones_data, _ = _safe_get("/api/zones")
-    zone_thresh_map = {z["name"]: (z["threshold_min"], z["threshold_max"])
+    zone_thresh_map = {z["name"]: (z.get("threshold_min"), z.get("threshold_max"))
                        for z in (zones_data or [])}
 
     # Group readings by zone
