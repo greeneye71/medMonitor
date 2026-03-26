@@ -11,7 +11,7 @@ def zone_card(zone_name: str, zone_color: str, status: str,
         sensors: lista di {name, temp, battery_pct}
     """
     status_class = {"OK": "mm-badge-ok", "WARNING": "mm-badge-warn", "CRITICAL": "mm-badge-critical"}.get(status, "mm-badge-info")
-    card_class = {"OK": "mm-card-ok", "WARNING": "mm-card-warn", "CRITICAL": "mm-card-critical"}.get(status, "mm-card")
+    card_class = {"OK": "mm-card-ok", "WARNING": "mm-card-warn", "CRITICAL": "mm-card-critical"}.get(status, "")
     temp_class = {"OK": "mm-temp-ok", "WARNING": "mm-temp-warn", "CRITICAL": "mm-temp-critical"}.get(status, "")
 
     temp_str = f"{temp:.1f}°C" if temp is not None else "–"

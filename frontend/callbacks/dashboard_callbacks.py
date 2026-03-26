@@ -2,7 +2,7 @@
 
 import requests
 from datetime import datetime
-from dash import Input, Output, callback, html
+from dash import Input, Output, callback, html, ctx
 from frontend.components.zone_card import zone_card
 from frontend.components.sensors_table import sensors_table
 from frontend.components.charts import temperature_line_chart, empty_chart
@@ -33,9 +33,9 @@ def update_dashboard(n, _clicks):
     readings, err2 = _safe_get("/api/readings/latest")
     sensors_cfg, err3 = _safe_get("/api/sensors")
 
-    if err1 or err2:
+    if err1 or err2 or err3:
         error_msg = html.Div(
-            f"⚠ Backend non raggiungibile: {err1 or err2}",
+            f"⚠ Backend non raggiungibile: {err1 or err2 or err3}",
             style={"background": "#fef3c7", "border": "1px solid #f59e0b",
                    "borderRadius": "8px", "padding": "10px 16px",
                    "fontSize": "13px", "color": "#92400e", "marginBottom": "16px"},
@@ -98,8 +98,18 @@ def update_dashboard(n, _clicks):
     Input("chart-range-24h", "n_clicks"),
     Input("chart-range-7d", "n_clicks"),
 )
-def update_chart(_n, _6h, _24h, _7d):
-    readings, err = _safe_get("/api/readings?limit=500")
+def update_chart(n, _6h, _24h, _7d):
+    # Determine hours from which button was clicked
+    triggered = ctx.triggered_id
+    if triggered == "chart-range-6h":
+        hours = 6
+    elif triggered == "chart-range-7d":
+        hours = 168
+    else:
+        hours = 24  # default: 24h
+
+    # NOTE: hours filtering is future work if /api/readings doesn't support it yet
+    readings, err = _safe_get(f"/api/readings?limit=500&hours={hours}")
     if err or not readings:
         return empty_chart("In attesa di dati...")
 
