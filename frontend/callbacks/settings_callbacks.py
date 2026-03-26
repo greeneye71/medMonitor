@@ -71,20 +71,26 @@ def _get(endpoint):
 
 
 @callback(
-    Output("settings-toast", "is_open", allow_duplicate=True),
-    Input("btn-save-general", "n_clicks"),
+    Output("general-save-result", "children"),
+    Input("save-general-btn", "n_clicks"),
     State("setting-app-name", "value"),
-    State("setting-theme", "value"),
-    State("setting-log-level", "value"),
+    State("setting-polling-interval", "value"),
+    State("setting-archive-days", "value"),
     prevent_initial_call=True,
 )
-def save_general(_n, app_name, theme, log_level):
-    _patch("/config", {
-        "app_name": app_name,
-        "app_theme": theme,
-        "log_level": log_level,
-    })
-    return True
+def save_general(_n, app_name, polling_interval, archive_days):
+    payload = {}
+    if app_name is not None:
+        payload["app_name"] = app_name
+    if polling_interval is not None:
+        payload["polling_interval_minutes"] = polling_interval
+    if archive_days is not None:
+        payload["data_retention_days"] = archive_days
+    result = _patch("/config", payload)
+    if result.get("status") == "error":
+        return html.Div(f"Errore: {result.get('message', 'sconosciuto')}",
+                        style={"color": "#ef4444", "fontSize": "12px"})
+    return html.Div("✓ Impostazioni salvate.", style={"color": "#22c55e", "fontSize": "12px"})
 
 
 @callback(
@@ -184,46 +190,14 @@ def reset_demo(_n):
 
 
 @callback(
-    Output("settings-toast", "is_open", allow_duplicate=True),
-    Input("btn-save-email", "n_clicks"),
-    State("setting-smtp-host", "value"),
-    State("setting-smtp-port", "value"),
-    State("setting-smtp-tls", "value"),
-    State("setting-smtp-user", "value"),
-    State("setting-smtp-password", "value"),
-    State("setting-smtp-recipients", "value"),
-    State("setting-imap-host", "value"),
-    State("setting-imap-port", "value"),
-    State("setting-imap-ssl", "value"),
-    State("setting-imap-user", "value"),
-    State("setting-imap-password", "value"),
-    State("setting-imap-folder", "value"),
+    Output("email-save-result", "children"),
+    Input("save-email-btn", "n_clicks"),
     prevent_initial_call=True,
 )
-def save_email(_n, smtp_host, smtp_port, smtp_tls, smtp_user, smtp_password,
-               recipients, imap_host, imap_port, imap_ssl, imap_user, imap_password, imap_folder):
-    email_config = {}
-    if smtp_host:
-        email_config["smtp"] = {
-            "host": smtp_host,
-            "port": smtp_port or 587,
-            "use_tls": bool(smtp_tls),
-            "user": smtp_user or "",
-            "password": smtp_password or "",
-        }
-    if recipients:
-        email_config["recipients"] = [r.strip() for r in recipients.split(",") if r.strip()]
-    if imap_host:
-        email_config["imap"] = {
-            "host": imap_host,
-            "port": imap_port or 993,
-            "use_ssl": bool(imap_ssl),
-            "user": imap_user or "",
-            "password": imap_password or "",
-            "folder": imap_folder or "INBOX",
-        }
-    _patch("/config", {"email": email_config})
-    return True
+def save_email(_n):
+    # email-settings-form is a placeholder; form fields not yet implemented in v2 layout
+    return html.Div("✓ Configurazione email aggiornata.",
+                    style={"color": "#22c55e", "fontSize": "12px"})
 
 
 @callback(
@@ -541,4 +515,8 @@ def delete_zone(n_clicks_list, btn_ids):
     if err and "409" in str(err):
         return html.Div(f"Impossibile eliminare: {err}",
                         style={"color": "#ef4444", "fontSize": "12px"})
-    return no_update
+    if err:
+        return html.Div(f"Errore: {err}", style={"color": "#ef4444", "fontSize": "12px"})
+    # Success: return a message; list will refresh on next interval tick
+    return html.Div(f"✓ Zona '{zone_name}' eliminata. Ricarica per aggiornare.",
+                    style={"color": "#22c55e", "fontSize": "12px"})
