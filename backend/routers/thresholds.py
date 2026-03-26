@@ -20,60 +20,84 @@ router = APIRouter(prefix="/api/thresholds", tags=["thresholds"])
 @router.get("")
 async def get_thresholds():
     """Return thresholds with effective_min/max for each sensor."""
-    thresholds = config_service.get_thresholds()
+    try:
+        thresholds = config_service.get_thresholds()
 
-    # Build response with effective values
-    sensors_effective = {}
-    for sensor_id, sensor in thresholds.sensors.items():
-        eff_min, eff_max = thresholds.resolve(sensor_id)
-        sensors_effective[sensor_id] = {
-            **sensor.model_dump(),
-            "effective_min": eff_min,
-            "effective_max": eff_max,
+        # Build response with effective values
+        sensors_effective = {}
+        for sensor_id, sensor in thresholds.sensors.items():
+            eff_min, eff_max = thresholds.resolve(sensor_id)
+            sensors_effective[sensor_id] = {
+                **sensor.model_dump(),
+                "effective_min": eff_min,
+                "effective_max": eff_max,
+            }
+
+        return {
+            "defaults": thresholds.defaults,
+            "sensors": sensors_effective,
         }
-
-    return {
-        "defaults": thresholds.defaults,
-        "sensors": sensors_effective,
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("get_thresholds failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.patch("/defaults")
 async def patch_defaults(patch: ThresholdDefaultsPatch):
     """Update zone default thresholds."""
-    if not patch.zones:
-        raise HTTPException(status_code=400, detail="No zone defaults to update")
+    try:
+        if not patch.zones:
+            raise HTTPException(status_code=400, detail="No zone defaults to update")
 
-    thresholds = config_service.update_threshold_defaults(patch.zones)
-    return {"status": "ok", "defaults": thresholds.defaults}
+        thresholds = config_service.update_threshold_defaults(patch.zones)
+        return {"status": "ok", "defaults": thresholds.defaults}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("patch_defaults failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.patch("/sensor/{sensor_id}")
 async def patch_sensor(sensor_id: str, patch: SensorThresholdPatch):
     """Update individual sensor thresholds."""
-    updates = patch.model_dump(exclude_none=True)
-    if not updates:
-        raise HTTPException(status_code=400, detail="No fields to update")
+    try:
+        updates = patch.model_dump(exclude_none=True)
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
 
-    thresholds = config_service.update_sensor_threshold(sensor_id, updates)
-    eff_min, eff_max = thresholds.resolve(sensor_id)
+        thresholds = config_service.update_sensor_threshold(sensor_id, updates)
+        eff_min, eff_max = thresholds.resolve(sensor_id)
 
-    sensor = thresholds.sensors[sensor_id]
-    return {
-        "status": "ok",
-        "sensor_id": sensor_id,
-        **sensor.model_dump(),
-        "effective_min": eff_min,
-        "effective_max": eff_max,
-    }
+        sensor = thresholds.sensors[sensor_id]
+        return {
+            "status": "ok",
+            "sensor_id": sensor_id,
+            **sensor.model_dump(),
+            "effective_min": eff_min,
+            "effective_max": eff_max,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("patch_sensor failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/sensor/{sensor_id}")
 async def delete_sensor_threshold(sensor_id: str):
     """Remove sensor-specific thresholds (revert to zone defaults)."""
-    thresholds = config_service.delete_sensor_threshold(sensor_id)
-    return {
-        "status": "ok",
-        "message": f"Soglie individuali rimosse per {sensor_id}",
-        "defaults": thresholds.defaults,
-    }
+    try:
+        thresholds = config_service.delete_sensor_threshold(sensor_id)
+        return {
+            "status": "ok",
+            "message": f"Soglie individuali rimosse per {sensor_id}",
+            "defaults": thresholds.defaults,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("delete_sensor_threshold failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))

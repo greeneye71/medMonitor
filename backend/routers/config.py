@@ -33,16 +33,22 @@ class ZoneCreate(BaseModel):
 @zones_router.get("")
 async def list_zones():
     """List all zones with thresholds and colors."""
-    cfg = config_service.get_config()
-    result = []
-    for zone_name, zone_thresh in cfg.thresholds.defaults.items():
-        result.append({
-            "name": zone_name,
-            "color": cfg.zone_colors.get(zone_name, "#64748b"),
-            "threshold_min": zone_thresh.min,
-            "threshold_max": zone_thresh.max,
-        })
-    return result
+    try:
+        cfg = config_service.get_config()
+        result = []
+        for zone_name, zone_thresh in cfg.thresholds.defaults.items():
+            result.append({
+                "name": zone_name,
+                "color": cfg.zone_colors.get(zone_name, "#64748b"),
+                "threshold_min": zone_thresh.min,
+                "threshold_max": zone_thresh.max,
+            })
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("list_zones failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @zones_router.post("")
@@ -54,40 +60,66 @@ async def create_or_update_zone(body: ZoneCreate):
         )
         config_service.update_zone_color(body.name, body.color)
         return {"name": body.name}
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error("create_or_update_zone failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @zones_router.delete("/{zone_name}")
 async def delete_zone(zone_name: str):
     """Delete a zone. Returns 409 if sensors are assigned."""
-    from backend.paths import data_file
-    sensors_file = data_file("sensors.json")
-    if sensors_file.exists():
-        sensors = json.loads(sensors_file.read_text(encoding="utf-8"))
-        if any(s.get("zone") == zone_name for s in sensors.values()):
-            raise HTTPException(
-                status_code=409,
-                detail=f"Zone '{zone_name}' ha sensori assegnati. Riassegna prima i sensori."
-            )
-    config_service.delete_threshold_default(zone_name)
-    config_service.delete_zone_color(zone_name)
-    return {"deleted": zone_name}
+    try:
+        from backend.paths import data_file
+        sensors_file = data_file("sensors.json")
+        if sensors_file.exists():
+            sensors = json.loads(sensors_file.read_text(encoding="utf-8"))
+            if any(s.get("zone") == zone_name for s in sensors.values()):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Zone '{zone_name}' ha sensori assegnati. Riassegna prima i sensori."
+                )
+        config_service.delete_threshold_default(zone_name)
+        config_service.delete_zone_color(zone_name)
+        return {"deleted": zone_name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("delete_zone failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("", response_model=AppConfig)
 async def get_config():
     """Return current application configuration."""
-    return config_service.get_config()
+    try:
+        return config_service.get_config()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("get_config failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.patch("", response_model=AppConfig)
 async def patch_config(patch: ConfigPatch):
     """Update runtime configuration parameters."""
-    updates = patch.model_dump(exclude_none=True)
-    if not updates:
-        raise HTTPException(status_code=400, detail="No fields to update")
-    return config_service.update_config(updates)
+    try:
+        updates = patch.model_dump(exclude_none=True)
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        updated = config_service.update_config(updates)
+        # Validate result is a valid AppConfig
+        AppConfig.model_validate(updated.model_dump())
+        return updated
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"Config validation failed: {e}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("patch_config failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/test-email")
@@ -162,15 +194,21 @@ async def test_imap():
 @router.post("/switch-database")
 async def switch_database(payload: dict):
     """Switch database backend (tinyflux / timescale)."""
-    new_backend = payload.get("backend")
-    if new_backend not in ("tinyflux", "timescale"):
-        raise HTTPException(
-            status_code=400,
-            detail="Field 'backend' must be 'tinyflux' or 'timescale'",
-        )
+    try:
+        new_backend = payload.get("backend")
+        if new_backend not in ("tinyflux", "timescale"):
+            raise HTTPException(
+                status_code=400,
+                detail="Field 'backend' must be 'tinyflux' or 'timescale'",
+            )
 
-    config_service.update_config({"database_backend": new_backend})
-    return {
-        "status": "ok",
-        "message": f"Backend cambiato a {new_backend}. Riavviare il servizio per applicare.",
-    }
+        config_service.update_config({"database_backend": new_backend})
+        return {
+            "status": "ok",
+            "message": f"Backend cambiato a {new_backend}. Riavviare il servizio per applicare.",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("switch_database failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))

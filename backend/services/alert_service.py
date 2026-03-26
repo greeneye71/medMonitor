@@ -93,7 +93,8 @@ class AlertService:
                     self._out_of_range_since.pop(sensor_id, None)
 
         except Exception as e:
-            logger.error("Alert check failed: %s", e)
+            logger.error("alert_service.check_alerts failed: %s", e, exc_info=True)
+            # Do not re-raise — APScheduler logs but doesn't crash
 
     async def _handle_out_of_range(
         self,

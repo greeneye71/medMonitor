@@ -1,11 +1,14 @@
 """Alerts router — GET /api/alerts, POST /api/alerts/test, PATCH /api/alerts/{id}/resolve."""
 
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
 
 from backend.models.alert import Alert, AlertTestRequest
 from backend.dependencies import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -19,10 +22,16 @@ async def get_alerts(
     limit: int = Query(100, ge=1, le=1000),
 ):
     """Get alert history with optional filters."""
-    db = get_db()
-    return await db.get_alerts(
-        zone=zone, level=level, from_dt=from_dt, to_dt=to_dt, limit=limit,
-    )
+    try:
+        db = get_db()
+        return await db.get_alerts(
+            zone=zone, level=level, from_dt=from_dt, to_dt=to_dt, limit=limit,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("get_alerts failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.patch("/{alert_id}/resolve")
@@ -32,14 +41,20 @@ async def resolve_alert(alert_id: str):
     Returns resolved=True if the backend supports in-place updates (TimescaleDB).
     TinyFlux does not support updates; the response will indicate resolved=False.
     """
-    db = get_db()
-    updated = await db.resolve_alert(alert_id)
-    return {
-        "status": "ok" if updated else "not_updated",
-        "alert_id": alert_id,
-        "resolved": updated,
-        "note": None if updated else "Backend does not support in-place updates (TinyFlux).",
-    }
+    try:
+        db = get_db()
+        updated = await db.resolve_alert(alert_id)
+        return {
+            "status": "ok" if updated else "not_updated",
+            "alert_id": alert_id,
+            "resolved": updated,
+            "note": None if updated else "Backend does not support in-place updates (TinyFlux).",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("resolve_alert failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/test")
