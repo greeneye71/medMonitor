@@ -80,14 +80,18 @@ class TimescaleAdapter(DatabaseAdapter):
             idx += 1
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        params.append(limit)
+
+        limit_clause = ""
+        if limit is not None:
+            params.append(limit)
+            limit_clause = f"LIMIT ${idx}"
 
         query = f"""
             SELECT zone, sensor_id, temperature, humidity, battery, timestamp
             FROM temperature_readings
             {where}
             ORDER BY timestamp DESC
-            LIMIT ${idx}
+            {limit_clause}
         """
 
         rows = await pool.fetch(query, *params)
@@ -168,7 +172,11 @@ class TimescaleAdapter(DatabaseAdapter):
             idx += 1
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        params.append(limit)
+
+        limit_clause = ""
+        if limit is not None:
+            params.append(limit)
+            limit_clause = f"LIMIT ${idx}"
 
         query = f"""
             SELECT id, zone, sensor_id, temperature, level, threshold_min,
@@ -176,7 +184,7 @@ class TimescaleAdapter(DatabaseAdapter):
             FROM alerts
             {where}
             ORDER BY timestamp DESC
-            LIMIT ${idx}
+            {limit_clause}
         """
 
         rows = await pool.fetch(query, *params)

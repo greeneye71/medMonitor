@@ -28,10 +28,10 @@ class ArchiveService:
 
         # get_readings(zone, sensor_id, from_dt, to_dt, limit)
         readings = await self._db.get_readings(
-            zone=None, sensor_id=None, from_dt=None, to_dt=cutoff, limit=None
+            zone=None, sensor_id=None, from_dt=None, to_dt=cutoff, limit=1_000_000
         )
         # get_alerts(zone, level, from_dt, to_dt, limit)
-        alerts = await self._db.get_alerts(to_dt=cutoff)
+        alerts = await self._db.get_alerts(to_dt=cutoff, limit=1_000_000)
 
         rows_archived = 0
         files_written = []
