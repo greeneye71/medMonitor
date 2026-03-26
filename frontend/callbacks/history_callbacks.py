@@ -8,6 +8,7 @@ import requests
 from dash import Input, Output, State, callback, no_update, dcc
 
 from frontend.components.charts import temperature_line_chart, empty_chart
+from frontend.utils import safe_get as _safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +23,6 @@ def _fetch(endpoint, params=None):
     except Exception as e:
         logger.warning("API fetch %s failed: %s", endpoint, e)
         return []
-
-
-def _safe_get(path: str):
-    try:
-        r = requests.get(f"http://localhost:8000{path}", timeout=3)
-        r.raise_for_status()
-        return r.json(), None
-    except Exception as e:
-        return None, str(e)
 
 
 @callback(

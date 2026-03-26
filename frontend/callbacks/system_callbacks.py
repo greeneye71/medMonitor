@@ -1,29 +1,9 @@
 """Sistema page callbacks — health, logs, service controls, archive."""
 
-import requests
 from datetime import datetime
 from dash import Input, Output, State, callback, html, ALL, ctx, MATCH
 from frontend.components.service_status import service_card
-
-API = "http://localhost:8000"
-
-
-def _safe_get(path: str):
-    try:
-        r = requests.get(f"{API}{path}", timeout=3)
-        r.raise_for_status()
-        return r.json(), None
-    except Exception as e:
-        return None, str(e)
-
-
-def _safe_post(path: str):
-    try:
-        r = requests.post(f"{API}{path}", timeout=5)
-        r.raise_for_status()
-        return r.json(), None
-    except Exception as e:
-        return None, str(e)
+from frontend.utils import safe_get as _safe_get, safe_post as _safe_post
 
 
 def _uptime_str(seconds: int) -> str:

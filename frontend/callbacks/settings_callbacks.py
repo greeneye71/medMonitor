@@ -6,38 +6,12 @@ import requests
 import dash_ag_grid as dag
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, no_update, html, dcc, ALL, MATCH, ctx
+from frontend.utils import safe_get as _safe_get, safe_post as _safe_post, safe_delete as _safe_delete
 
 logger = logging.getLogger(__name__)
 
 API_BASE = "http://localhost:8000/api"
 API = "http://localhost:8000"
-
-
-def _safe_get(path):
-    try:
-        r = requests.get(f"{API}{path}", timeout=3)
-        r.raise_for_status()
-        return r.json(), None
-    except Exception as e:
-        return None, str(e)
-
-
-def _safe_post(path, json=None):
-    try:
-        r = requests.post(f"{API}{path}", json=json, timeout=5)
-        r.raise_for_status()
-        return r.json(), None
-    except Exception as e:
-        return None, str(e)
-
-
-def _safe_delete(path):
-    try:
-        r = requests.delete(f"{API}{path}", timeout=5)
-        r.raise_for_status()
-        return r.json(), None
-    except Exception as e:
-        return None, str(e)
 
 
 def _post(endpoint, json_data=None):

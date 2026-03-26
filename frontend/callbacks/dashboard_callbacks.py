@@ -1,22 +1,11 @@
 """Dashboard callbacks v2 — zone dinamiche, resilienza API."""
 
-import requests
 from datetime import datetime
 from dash import Input, Output, callback, html, ctx
 from frontend.components.zone_card import zone_card
 from frontend.components.sensors_table import sensors_table
 from frontend.components.charts import temperature_line_chart, empty_chart
-
-API = "http://localhost:8000"
-
-
-def _safe_get(path: str):
-    try:
-        r = requests.get(f"{API}{path}", timeout=3)
-        r.raise_for_status()
-        return r.json(), None
-    except Exception as e:
-        return None, str(e)
+from frontend.utils import safe_get as _safe_get
 
 
 @callback(
