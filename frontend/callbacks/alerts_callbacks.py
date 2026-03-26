@@ -53,6 +53,7 @@ def update_alerts(_n_clicks, _n_interval, zone, level, start_date, end_date):
             "sensor_id": a.get("sensor_id", ""),
             "temperature": a.get("temperature", 0),
             "level": a.get("level", ""),
+            "duration_min": a.get("duration_min", ""),
             "message": a.get("message", ""),
         })
 

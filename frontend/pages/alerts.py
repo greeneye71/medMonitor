@@ -88,63 +88,23 @@ def layout():
             dag.AgGrid(
                 id="alerts-grid",
                 columnDefs=[
-                    {
-                        "field": "timestamp",
-                        "headerName": "Data/Ora",
-                        "sortable": True,
-                        "filter": True,
-                        "width": 180,
-                    },
-                    {
-                        "field": "zone",
-                        "headerName": "Zona",
-                        "sortable": True,
-                        "filter": True,
-                        "width": 120,
-                    },
-                    {
-                        "field": "sensor_id",
-                        "headerName": "Sensore",
-                        "sortable": True,
-                        "filter": True,
-                        "width": 180,
-                    },
-                    {
-                        "field": "temperature",
-                        "headerName": "Temp (°C)",
-                        "sortable": True,
-                        "width": 100,
-                        "valueFormatter": {"function": "d3.format('.1f')(params.value)"},
-                    },
-                    {
-                        "field": "level",
-                        "headerName": "Livello",
-                        "sortable": True,
-                        "filter": True,
-                        "width": 120,
-                        "cellStyle": {
-                            "styleConditions": [
-                                {"condition": "params.value === 'CRITICAL'", "style": {"color": "#E24B4A", "fontWeight": "bold"}},
-                                {"condition": "params.value === 'WARNING'", "style": {"color": "#BA7517", "fontWeight": "bold"}},
-                            ]
-                        },
-                    },
-                    {
-                        "field": "message",
-                        "headerName": "Messaggio",
-                        "flex": 1,
-                        "minWidth": 200,
-                    },
+                    {"field": "timestamp",    "headerName": "Data/Ora",  "width": 150},
+                    {"field": "zone",         "headerName": "Zona",       "width": 120},
+                    {"field": "sensor_id",    "headerName": "Sensore",    "width": 120},
+                    {"field": "temperature",  "headerName": "Temp (°C)",  "width": 100},
+                    {"field": "level",        "headerName": "Livello",    "width": 100},
+                    {"field": "duration_min", "headerName": "Durata",     "width": 90},
+                    {"field": "message",      "headerName": "Messaggio",  "flex": 1},
                 ],
                 rowData=[],
                 defaultColDef={"resizable": True},
-                className="ag-theme-alpine-dark",
+                className="ag-theme-quartz",
                 style={"height": "500px"},
-                dashGridOptions={
-                    "pagination": True,
-                    "paginationPageSize": 20,
-                    "animateRows": True,
+                rowClassRules={
+                    "alert-row-critical": "params.data.level === 'CRITICAL'",
+                    "alert-row-warning":  "params.data.level === 'WARNING'",
                 },
+                dashGridOptions={"pagination": True, "paginationPageSize": 25},
             ),
         ]
     )
