@@ -20,6 +20,7 @@ from backend.routers import alerts as alerts_router
 from backend.routers import demo as demo_router
 from backend.routers import health as health_router
 from backend.routers import logs as logs_router
+from backend.routers import archive as archive_router
 from backend.services.alert_service import alert_service
 from backend.services.imap_service import imap_service
 from backend.services.mqtt_client import MQTTClient
@@ -154,3 +155,4 @@ app.include_router(alerts_router.router)
 app.include_router(demo_router.router)
 app.include_router(health_router.router)
 app.include_router(logs_router.router)
+app.include_router(archive_router.router)
