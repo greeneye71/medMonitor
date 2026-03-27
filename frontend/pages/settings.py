@@ -23,6 +23,36 @@ def layout():
                 active_tab="tab-sensors",
             ),
             dcc.Store(id="settings-save-trigger"),
+            # ── Bug 2 fix: static modals ──────────────────────────────────────
+            # Modale accetta sensore
+            dbc.Modal([
+                dbc.ModalHeader(dbc.ModalTitle("Aggiungi sensore")),
+                dbc.ModalBody([
+                    html.Div(id="accept-sensor-modal-body"),
+                ]),
+                dbc.ModalFooter([
+                    dbc.Button("Conferma", id="accept-sensor-confirm-btn", color="primary", className="me-2"),
+                    dbc.Button("Annulla", id="accept-sensor-cancel-btn", color="secondary"),
+                ]),
+            ], id="accept-sensor-modal", is_open=False),
+            # Modale aggiungi zona
+            dbc.Modal([
+                dbc.ModalHeader(dbc.ModalTitle("Aggiungi / Modifica Zona")),
+                dbc.ModalBody([
+                    dbc.Label("Nome zona"),
+                    dbc.Input(id="zone-name-input", placeholder="es. magazzino"),
+                    dbc.Label("Colore", className="mt-2"),
+                    dbc.Input(id="zone-color-input", type="color", value="#22c55e"),
+                    dbc.Label("Soglia min (°C)", className="mt-2"),
+                    dbc.Input(id="zone-min-input", type="number", value=0),
+                    dbc.Label("Soglia max (°C)", className="mt-2"),
+                    dbc.Input(id="zone-max-input", type="number", value=30),
+                ]),
+                dbc.ModalFooter([
+                    dbc.Button("Salva", id="add-zone-confirm-btn", color="primary", className="me-2"),
+                    dbc.Button("Annulla", id="add-zone-cancel-btn", color="secondary"),
+                ]),
+            ], id="add-zone-modal", is_open=False),
         ]
     )
 
@@ -92,6 +122,22 @@ def _tab_email():
         [
             html.Div("Email / Alert",
                      style={"fontSize": "13px", "fontWeight": "700", "marginBottom": "16px", "marginTop": "16px"}),
+            # Bug 4 fix: add actual email input fields
+            html.Div(
+                [
+                    html.Label("Server SMTP", style={"fontSize": "12px", "fontWeight": "600"}),
+                    dbc.Input(id="setting-smtp-host", placeholder="smtp.example.com",
+                              style={"marginBottom": "12px"}),
+                    html.Label("Utente SMTP", style={"fontSize": "12px", "fontWeight": "600"}),
+                    dbc.Input(id="setting-smtp-user", placeholder="user@example.com",
+                              style={"marginBottom": "12px"}),
+                    html.Label("Password SMTP", style={"fontSize": "12px", "fontWeight": "600"}),
+                    dbc.Input(id="setting-smtp-password", type="password",
+                              style={"marginBottom": "12px"}),
+                ],
+                className="mm-card",
+                style={"maxWidth": "480px", "marginBottom": "16px"},
+            ),
             html.Div(id="email-settings-form"),
             html.Button("Salva", id="save-email-btn", n_clicks=0,
                         style={"background": "#0f172a", "color": "#fff", "border": "none",

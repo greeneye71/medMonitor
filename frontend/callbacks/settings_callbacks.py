@@ -59,7 +59,7 @@ def save_general(_n, app_name, polling_interval, archive_days):
     if polling_interval is not None:
         payload["polling_interval_minutes"] = polling_interval
     if archive_days is not None:
-        payload["data_retention_days"] = archive_days
+        payload["archive_after_days"] = archive_days  # Bug 3 fix: was data_retention_days
     result = _patch("/config", payload)
     if result.get("status") == "error":
         return html.Div(f"Errore: {result.get('message', 'sconosciuto')}",
@@ -68,137 +68,28 @@ def save_general(_n, app_name, polling_interval, archive_days):
 
 
 @callback(
-    Output("settings-toast", "is_open", allow_duplicate=True),
-    Input("btn-save-thresholds", "n_clicks"),
-    State("slider-fridge-defaults", "value"),
-    State("slider-freezer-defaults", "value"),
-    prevent_initial_call=True,
-)
-def save_thresholds(_n, fridge_range, freezer_range):
-    _patch("/thresholds/defaults", {
-        "fridge": {"min": fridge_range[0], "max": fridge_range[1]},
-        "freezer": {"min": freezer_range[0], "max": freezer_range[1]},
-    })
-    return True
-
-
-@callback(
-    Output("settings-toast", "is_open", allow_duplicate=True),
-    Input("btn-save-system", "n_clicks"),
-    State("setting-polling-interval", "value"),
-    State("setting-cooldown", "value"),
-    State("setting-retention", "value"),
-    prevent_initial_call=True,
-)
-def save_system(_n, polling, cooldown, retention):
-    _patch("/config", {
-        "polling_interval_minutes": polling,
-        "alert_cooldown_minutes": cooldown,
-        "data_retention_days": retention,
-    })
-    return True
-
-
-@callback(
-    Output("badge-smtp-status", "children"),
-    Output("badge-smtp-status", "color"),
-    Input("btn-test-smtp", "n_clicks"),
-    State("setting-smtp-user", "value"),
-    prevent_initial_call=True,
-)
-def test_smtp(_n, smtp_user):
-    if not smtp_user:
-        return "Compila i campi SMTP", "warning"
-    result = _post("/config/test-email", {"email": smtp_user})
-    if result.get("status") == "ok":
-        return "OK", "success"
-    return "Errore", "danger"
-
-
-@callback(
-    Output("badge-imap-status", "children"),
-    Output("badge-imap-status", "color"),
-    Input("btn-test-imap", "n_clicks"),
-    prevent_initial_call=True,
-)
-def test_imap(_n):
-    result = _post("/config/test-imap")
-    if result.get("status") == "ok":
-        return "OK", "success"
-    return "Errore", "danger"
-
-
-@callback(
-    Output("demo-status-text", "children"),
-    Input("btn-start-demo", "n_clicks"),
-    State("setting-demo-scenario", "value"),
-    State("setting-demo-speed", "value"),
-    prevent_initial_call=True,
-)
-def start_demo(_n, scenario, speed):
-    result = _post("/demo/start", {"scenario": scenario, "speed": speed})
-    if result.get("status") == "ok":
-        return f"Demo avviata: {scenario} a {speed}"
-    return f"Errore: {result.get('message', 'sconosciuto')}"
-
-
-@callback(
-    Output("demo-status-text", "children", allow_duplicate=True),
-    Input("btn-stop-demo-settings", "n_clicks"),
-    prevent_initial_call=True,
-)
-def stop_demo(_n):
-    _post("/demo/stop")
-    return "Demo fermata"
-
-
-@callback(
-    Output("demo-status-text", "children", allow_duplicate=True),
-    Input("btn-reset-demo", "n_clicks"),
-    prevent_initial_call=True,
-)
-def reset_demo(_n):
-    result = _post("/demo/reset")
-    msg = result.get("message", "Dati demo cancellati")
-    return msg
-
-
-@callback(
     Output("email-save-result", "children"),
     Input("save-email-btn", "n_clicks"),
+    State("setting-smtp-host", "value"),
+    State("setting-smtp-user", "value"),
+    State("setting-smtp-password", "value"),
     prevent_initial_call=True,
 )
-def save_email(_n):
-    # email-settings-form is a placeholder; form fields not yet implemented in v2 layout
-    return html.Div("✓ Configurazione email aggiornata.",
-                    style={"color": "#22c55e", "fontSize": "12px"})
-
-
-@callback(
-    Output("settings-toast", "is_open", allow_duplicate=True),
-    Input("btn-save-sensors", "n_clicks"),
-    State("sensors-edit-grid", "rowData"),
-    prevent_initial_call=True,
-)
-def save_sensors(_n, row_data):
-    if not row_data:
-        return no_update
-    for row in row_data:
-        sensor_id = row.get("sensor_id")
-        if sensor_id:
-            try:
-                requests.put(
-                    f"{API_BASE}/sensors/{sensor_id}",
-                    json={
-                        "name": row.get("name", ""),
-                        "zone": row.get("zone", "fridge"),
-                        "active": row.get("active", True),
-                    },
-                    timeout=5,
-                )
-            except Exception as e:
-                logger.warning("Save sensor %s failed: %s", sensor_id, e)
-    return True
+def save_email(_n, smtp_host, smtp_user, smtp_password):
+    # Bug 4 fix: actually call the API with email config fields
+    payload = {}
+    if smtp_host is not None:
+        payload["smtp_host"] = smtp_host
+    if smtp_user is not None:
+        payload["smtp_user"] = smtp_user
+    if smtp_password is not None:
+        payload["smtp_password"] = smtp_password
+    if not payload:
+        return html.Div("Nessun campo da salvare.", style={"color": "#94a3b8", "fontSize": "12px"})
+    result, err = _safe_post("/api/config", payload)
+    if err:
+        return html.Div(f"Errore: {err}", style={"color": "#ef4444", "fontSize": "12px"})
+    return html.Div("✓ Configurazione email aggiornata.", style={"color": "#22c55e", "fontSize": "12px"})
 
 
 # ── New Impostazioni v2 callbacks ─────────────────────────────────────────────
@@ -340,56 +231,50 @@ def update_configured_sensors(n, active_tab):
     )
 
 
+# Bug 2 fix: open_accept_modal now writes to static modal body + opens static modal
 @callback(
-    Output("accept-sensor-modal-container", "children"),
+    Output("accept-sensor-modal-body", "children"),
+    Output("accept-sensor-modal", "is_open"),
     Input({"type": "accept-sensor-btn", "id": ALL}, "n_clicks"),
     State({"type": "accept-sensor-btn", "id": ALL}, "id"),
     prevent_initial_call=True,
 )
 def open_accept_modal(n_clicks_list, btn_ids):
     if not any(n for n in n_clicks_list if n):
-        return no_update
+        return no_update, no_update
     triggered_idx = next(i for i, n in enumerate(n_clicks_list) if n)
     sensor_id = btn_ids[triggered_idx]["id"]
 
-    modal = dbc.Modal(
-        [
-            dbc.ModalHeader(f"Accetta sensore: {sensor_id}"),
-            dbc.ModalBody([
-                html.Label("Nome", style={"fontSize": "12px", "fontWeight": "600"}),
-                dcc.Input(id="accept-sensor-name", type="text",
-                          style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
-                                 "borderRadius": "6px", "marginBottom": "10px"}),
-                html.Label("Zona", style={"fontSize": "12px", "fontWeight": "600"}),
-                dcc.Input(id="accept-sensor-zone", type="text",
-                          style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
-                                 "borderRadius": "6px", "marginBottom": "10px"}),
-                html.Label("Soglia min (opzionale)", style={"fontSize": "12px", "fontWeight": "600"}),
-                dcc.Input(id="accept-sensor-min", type="number",
-                          style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
-                                 "borderRadius": "6px", "marginBottom": "10px"}),
-                html.Label("Soglia max (opzionale)", style={"fontSize": "12px", "fontWeight": "600"}),
-                dcc.Input(id="accept-sensor-max", type="number",
-                          style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
-                                 "borderRadius": "6px"}),
-                dcc.Store(id="accept-sensor-id-store", data=sensor_id),
-            ]),
-            dbc.ModalFooter([
-                dbc.Button("Annulla", id="accept-cancel-btn", color="secondary", size="sm"),
-                dbc.Button("Accetta", id="accept-confirm-btn", color="primary", size="sm"),
-            ]),
-        ],
-        id="accept-sensor-modal",
-        is_open=True,
-    )
-    return modal
+    body = [
+        html.P(f"Sensore: {sensor_id}", style={"fontFamily": "monospace", "fontSize": "12px",
+                                                "color": "#374151", "marginBottom": "10px"}),
+        html.Label("Nome", style={"fontSize": "12px", "fontWeight": "600"}),
+        dcc.Input(id="accept-sensor-name", type="text",
+                  style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
+                         "borderRadius": "6px", "marginBottom": "10px"}),
+        html.Label("Zona", style={"fontSize": "12px", "fontWeight": "600"}),
+        dcc.Input(id="accept-sensor-zone", type="text",
+                  style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
+                         "borderRadius": "6px", "marginBottom": "10px"}),
+        html.Label("Soglia min (opzionale)", style={"fontSize": "12px", "fontWeight": "600"}),
+        dcc.Input(id="accept-sensor-min", type="number",
+                  style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
+                         "borderRadius": "6px", "marginBottom": "10px"}),
+        html.Label("Soglia max (opzionale)", style={"fontSize": "12px", "fontWeight": "600"}),
+        dcc.Input(id="accept-sensor-max", type="number",
+                  style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
+                         "borderRadius": "6px"}),
+        dcc.Store(id="accept-sensor-id-store", data=sensor_id),
+    ]
+    return body, True
 
 
+# Bug 2 fix: confirm uses static modal IDs (accept-sensor-confirm-btn / accept-sensor-cancel-btn)
 @callback(
-    Output("accept-sensor-modal", "is_open"),
+    Output("accept-sensor-modal", "is_open", allow_duplicate=True),
     Output("discovered-sensors-list", "children", allow_duplicate=True),
-    Input("accept-confirm-btn", "n_clicks"),
-    Input("accept-cancel-btn", "n_clicks"),
+    Input("accept-sensor-confirm-btn", "n_clicks"),
+    Input("accept-sensor-cancel-btn", "n_clicks"),
     State("accept-sensor-id-store", "data"),
     State("accept-sensor-name", "value"),
     State("accept-sensor-zone", "value"),
@@ -398,7 +283,7 @@ def open_accept_modal(n_clicks_list, btn_ids):
     prevent_initial_call=True,
 )
 def confirm_accept_sensor(confirm, cancel, sensor_id, name, zone, min_val, max_val):
-    if ctx.triggered_id == "accept-cancel-btn":
+    if ctx.triggered_id == "accept-sensor-cancel-btn":
         return False, no_update
     if not name or not zone:
         return True, no_update
@@ -412,57 +297,30 @@ def confirm_accept_sensor(confirm, cancel, sensor_id, name, zone, min_val, max_v
                             style={"color": "#22c55e", "fontSize": "12px"})
 
 
+# Bug 2 fix: open_add_zone_modal opens static modal (returns is_open=True)
 @callback(
-    Output("zone-modal-container", "children"),
+    Output("add-zone-modal", "is_open"),
     Input("add-zone-btn", "n_clicks"),
     prevent_initial_call=True,
 )
 def open_add_zone_modal(n):
-    modal = dbc.Modal(
-        [
-            dbc.ModalHeader("Aggiungi zona"),
-            dbc.ModalBody([
-                html.Label("Nome zona", style={"fontSize": "12px", "fontWeight": "600"}),
-                dcc.Input(id="new-zone-name", type="text",
-                          style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
-                                 "borderRadius": "6px", "marginBottom": "10px"}),
-                html.Label("Colore", style={"fontSize": "12px", "fontWeight": "600"}),
-                dcc.Input(id="new-zone-color", type="text", value="#64748b",
-                          style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
-                                 "borderRadius": "6px", "marginBottom": "10px"}),
-                html.Label("Soglia min (\u00b0C)", style={"fontSize": "12px", "fontWeight": "600"}),
-                dcc.Input(id="new-zone-min", type="number",
-                          style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
-                                 "borderRadius": "6px", "marginBottom": "10px"}),
-                html.Label("Soglia max (\u00b0C)", style={"fontSize": "12px", "fontWeight": "600"}),
-                dcc.Input(id="new-zone-max", type="number",
-                          style={"width": "100%", "padding": "6px", "border": "1px solid #e2e8f0",
-                                 "borderRadius": "6px"}),
-            ]),
-            dbc.ModalFooter([
-                dbc.Button("Annulla", id="zone-modal-cancel", color="secondary", size="sm"),
-                dbc.Button("Crea zona", id="zone-modal-confirm", color="primary", size="sm"),
-            ]),
-        ],
-        id="add-zone-modal",
-        is_open=True,
-    )
-    return modal
+    return True
 
 
+# Bug 2 fix: confirm_add_zone reads from static modal inputs
 @callback(
-    Output("add-zone-modal", "is_open"),
+    Output("add-zone-modal", "is_open", allow_duplicate=True),
     Output("zones-threshold-list", "children", allow_duplicate=True),
-    Input("zone-modal-confirm", "n_clicks"),
-    Input("zone-modal-cancel", "n_clicks"),
-    State("new-zone-name", "value"),
-    State("new-zone-color", "value"),
-    State("new-zone-min", "value"),
-    State("new-zone-max", "value"),
+    Input("add-zone-confirm-btn", "n_clicks"),
+    Input("add-zone-cancel-btn", "n_clicks"),
+    State("zone-name-input", "value"),
+    State("zone-color-input", "value"),
+    State("zone-min-input", "value"),
+    State("zone-max-input", "value"),
     prevent_initial_call=True,
 )
 def confirm_add_zone(confirm, cancel, name, color, min_val, max_val):
-    if ctx.triggered_id == "zone-modal-cancel":
+    if ctx.triggered_id == "add-zone-cancel-btn":
         return False, no_update
     if not name or min_val is None or max_val is None:
         return True, no_update
