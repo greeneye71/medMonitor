@@ -1,7 +1,8 @@
 """Sistema page callbacks — health, logs, service controls, archive."""
 
 from datetime import datetime
-from dash import Input, Output, State, callback, html, ALL, ctx, MATCH
+from dash import Input, Output, State, callback, html, ALL, ctx, MATCH, no_update
+import dash_bootstrap_components as dbc
 from frontend.components.service_status import service_card
 from frontend.utils import safe_get as _safe_get, safe_post as _safe_post
 
@@ -147,3 +148,37 @@ def handle_service_action(n_clicks, btn_id):
     action  = btn_id["action"]
     _safe_post(f"/api/services/{service}/{action}")
     return False  # re-enable button after action
+
+
+@callback(
+    Output("demo-banner-container", "children"),
+    Input("interval-30s", "n_intervals"),
+)
+def update_demo_banner(n):
+    data, err = _safe_get("/api/demo/status")
+    if err or not data or not data.get("active"):
+        return []
+    scenario = data.get("scenario", "")
+    return dbc.Alert(
+        [
+            html.Strong("🎮 DEMO MODE"),
+            f" — Scenario: {scenario}",
+            dbc.Button("Ferma", id="btn-stop-demo", color="warning",
+                       size="sm", className="ms-3"),
+        ],
+        color="warning",
+        className="mb-0 rounded-0 py-2",
+        style={"fontSize": "13px"},
+    )
+
+
+@callback(
+    Output("demo-banner-container", "children", allow_duplicate=True),
+    Input("btn-stop-demo", "n_clicks"),
+    prevent_initial_call=True,
+)
+def stop_demo_banner(n):
+    if not n:
+        return no_update
+    _safe_post("/api/demo/stop")
+    return []

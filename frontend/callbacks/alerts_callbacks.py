@@ -30,6 +30,7 @@ def _fetch(endpoint, params=None):
     State("alerts-level-filter", "value"),
     State("alerts-date-range", "start_date"),
     State("alerts-date-range", "end_date"),
+    prevent_initial_call=True,
 )
 def update_alerts(_n_clicks, _n_interval, zone, level, start_date, end_date):
     params = {"limit": 500}

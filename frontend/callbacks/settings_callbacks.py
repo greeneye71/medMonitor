@@ -240,10 +240,9 @@ def update_configured_sensors(n, active_tab):
     prevent_initial_call=True,
 )
 def open_accept_modal(n_clicks_list, btn_ids):
-    if not any(n for n in n_clicks_list if n):
+    if not ctx.triggered_id:
         return no_update, no_update
-    triggered_idx = next(i for i, n in enumerate(n_clicks_list) if n)
-    sensor_id = btn_ids[triggered_idx]["id"]
+    sensor_id = ctx.triggered_id["id"]
 
     body = [
         html.P(f"Sensore: {sensor_id}", style={"fontFamily": "monospace", "fontSize": "12px",
@@ -339,10 +338,9 @@ def confirm_add_zone(confirm, cancel, name, color, min_val, max_val):
     prevent_initial_call=True,
 )
 def delete_zone(n_clicks_list, btn_ids):
-    if not any(n for n in n_clicks_list if n):
+    if not ctx.triggered_id:
         return no_update
-    triggered_idx = next(i for i, n in enumerate(n_clicks_list) if n)
-    zone_name = btn_ids[triggered_idx]["name"]
+    zone_name = ctx.triggered_id["name"]
     result, err = _safe_delete(f"/api/zones/{zone_name}")
     if err and "409" in str(err):
         return html.Div(f"Impossibile eliminare: {err}",
