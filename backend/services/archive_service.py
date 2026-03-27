@@ -36,8 +36,11 @@ class ArchiveService:
         rows_archived = 0
         files_written = []
 
-        def _month_key(ts_str: str) -> str:
-            return ts_str[:7]
+        def _month_key(ts_val) -> str:
+            if isinstance(ts_val, str):
+                return ts_val[:7]
+            # datetime object
+            return ts_val.strftime("%Y-%m")
 
         readings_by_month = defaultdict(list)
         for r in readings:
