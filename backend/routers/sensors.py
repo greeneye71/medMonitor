@@ -170,7 +170,7 @@ async def update_sensor(sensor_id: str, update: SensorUpdate):
         sensors = _load_sensors()
 
         if sensor_id not in sensors:
-            sensors[sensor_id] = {"name": "", "zone": "fridge", "active": True}
+            raise HTTPException(status_code=404, detail=f"Sensor {sensor_id} not found")
 
         for field, value in update.model_dump(exclude_none=True).items():
             sensors[sensor_id][field] = value

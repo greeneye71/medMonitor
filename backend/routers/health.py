@@ -76,6 +76,12 @@ async def control_mqtt(action: str, request: Request):
             mqtt.stop()
         return {"status": "stopped"}
     elif action == "start":
+        existing = getattr(request.app.state, "mqtt_client", None)
+        if existing is not None:
+            try:
+                existing.stop()
+            except Exception:
+                pass
         import asyncio
         from backend.services.mqtt_client import MQTTClient
         from backend.main import _on_mqtt_reading
