@@ -1,6 +1,6 @@
 """Dashboard callbacks v2 — zone dinamiche, resilienza API."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from dash import Input, Output, callback, html, ctx
 from frontend.components.zone_card import zone_card
 from frontend.components.sensors_table import sensors_table
@@ -33,7 +33,7 @@ def update_dashboard(n, _clicks):
 
     # Build zone cards
     readings_map = {r["sensor_id"]: r for r in (readings or [])}
-    sensor_map = {s["id"]: s for s in (sensors_cfg or [])}
+    sensor_map = {s["sensor_id"]: s for s in (sensors_cfg or [])}
 
     zone_cards = []
     all_sensor_rows = []
@@ -48,16 +48,16 @@ def update_dashboard(n, _clicks):
         sensor_data = []
         temps = []
         for s in zone_sensors:
-            r = readings_map.get(s["id"], {})
+            r = readings_map.get(s["sensor_id"], {})
             t = r.get("temperature")
             if t is not None:
                 temps.append(t)
             sensor_data.append({
-                "id": s["id"], "name": s.get("name", s["id"]),
+                "id": s["sensor_id"], "name": s.get("name", s["sensor_id"]),
                 "temp": t, "battery_pct": r.get("battery"),
             })
             all_sensor_rows.append({
-                "id": s["id"], "name": s.get("name", s["id"]),
+                "id": s["sensor_id"], "name": s.get("name", s["sensor_id"]),
                 "zone": zone_name, "zone_color": zone_color,
                 "temp": t, "battery_pct": r.get("battery"),
                 "last_seen_s": r.get("age_seconds"),
@@ -97,8 +97,9 @@ def update_chart(n, _6h, _24h, _7d):
     else:
         hours = 24  # default: 24h
 
-    # NOTE: hours filtering is future work if /api/readings doesn't support it yet
-    readings, err = _safe_get(f"/api/readings?limit=500&hours={hours}")
+    now = datetime.now(timezone.utc)
+    from_dt = (now - timedelta(hours=hours)).isoformat()
+    readings, err = _safe_get(f"/api/readings?limit=500&from={from_dt}")
     if err or not readings:
         return empty_chart("In attesa di dati...")
 
