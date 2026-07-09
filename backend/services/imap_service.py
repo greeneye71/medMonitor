@@ -77,6 +77,11 @@ class ImapService:
                 conn.logout()
                 return []
 
+            # Collect all recognised commands first, mark Seen only afterwards.
+            # This avoids losing messages if the process crashes mid-loop: a
+            # message is only marked Seen once it has been added to results.
+            pending_seen: list[bytes] = []
+
             for msg_id in message_ids[0].split():
                 status, msg_data = conn.fetch(msg_id, "(RFC822)")
                 if status != "OK":
@@ -97,7 +102,14 @@ class ImapService:
                     command["subject"] = msg.get("Subject", "")
                     results.append(command)
                     logger.info("IMAP command: %s from %s", command["type"], command["from"])
+                    pending_seen.append(msg_id)
+
+            # Mark collected messages as Seen only after all have been appended
+            for msg_id in pending_seen:
+                try:
                     conn.store(msg_id, "+FLAGS", "\\Seen")
+                except Exception as mark_err:
+                    logger.warning("Could not mark message %s as Seen: %s", msg_id, mark_err)
 
             conn.logout()
 

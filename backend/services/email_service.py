@@ -8,13 +8,14 @@ from typing import Any
 import aiosmtplib
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from backend.paths import get_template_dir
 from backend.services.config_service import config_service
 
 logger = logging.getLogger(__name__)
 
 # Jinja2 template environment
 _template_env = Environment(
-    loader=FileSystemLoader("backend/templates"),
+    loader=FileSystemLoader(str(get_template_dir())),
     autoescape=select_autoescape(["html"]),
 )
 

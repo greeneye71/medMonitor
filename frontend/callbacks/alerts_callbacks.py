@@ -30,6 +30,7 @@ def _fetch(endpoint, params=None):
     State("alerts-level-filter", "value"),
     State("alerts-date-range", "start_date"),
     State("alerts-date-range", "end_date"),
+    prevent_initial_call=True,
 )
 def update_alerts(_n_clicks, _n_interval, zone, level, start_date, end_date):
     params = {"limit": 500}
@@ -53,6 +54,7 @@ def update_alerts(_n_clicks, _n_interval, zone, level, start_date, end_date):
             "sensor_id": a.get("sensor_id", ""),
             "temperature": a.get("temperature", 0),
             "level": a.get("level", ""),
+            "duration_min": a.get("duration_min", ""),
             "message": a.get("message", ""),
         })
 
@@ -66,17 +68,3 @@ def update_alerts(_n_clicks, _n_interval, zone, level, start_date, end_date):
     )
 
 
-@callback(
-    Output("navbar-alert-badge", "children"),
-    Output("navbar-alert-badge", "color"),
-    Input("interval-60s", "n_intervals"),
-)
-def update_navbar_badge(_n):
-    alerts = _fetch("/alerts", {"limit": 50})
-    critical = sum(1 for a in alerts if a.get("level") == "CRITICAL")
-
-    if critical > 0:
-        return f"{critical} allarmi", "danger"
-    elif alerts:
-        return f"{len(alerts)} avvisi", "warning"
-    return "0 allarmi", "success"

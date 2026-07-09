@@ -1,126 +1,109 @@
-"""Dashboard callbacks — update metrics, zone cards, charts every 30s."""
+"""Dashboard callbacks v2 — zone dinamiche, resilienza API."""
 
-import logging
-
-import requests
-from dash import Input, Output, html, callback, no_update
-import dash_bootstrap_components as dbc
-
-from frontend.components.metric_card import metric_card
+from datetime import datetime, timedelta, timezone
+from dash import Input, Output, callback, html, ctx
 from frontend.components.zone_card import zone_card
-from frontend.components.demo_banner import demo_banner
+from frontend.components.sensors_table import sensors_table
 from frontend.components.charts import temperature_line_chart, empty_chart
-
-logger = logging.getLogger(__name__)
-
-API_BASE = "http://localhost:8000/api"
-
-
-def _fetch(endpoint: str, params: dict | None = None):
-    """Fetch from backend API, return JSON or empty list on error."""
-    try:
-        resp = requests.get(f"{API_BASE}{endpoint}", params=params, timeout=5)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        logger.warning("API fetch %s failed: %s", endpoint, e)
-        return []
+from frontend.utils import safe_get as _safe_get
 
 
 @callback(
-    Output("metric-fridge", "children"),
-    Output("metric-freezer", "children"),
-    Output("metric-alerts", "children"),
-    Output("metric-sensors", "children"),
+    Output("dashboard-zone-cards", "children"),
+    Output("dashboard-sensors-table", "children"),
+    Output("dashboard-updated-ts", "children"),
+    Output("dashboard-error-banner", "children"),
+    Output("dashboard-error-banner", "style"),
     Input("interval-30s", "n_intervals"),
+    Input("dashboard-refresh-btn", "n_clicks"),
 )
-def update_metrics(_n):
-    latest = _fetch("/readings/latest")
-    alerts = _fetch("/alerts", {"limit": 100})
+def update_dashboard(n, _clicks):
+    zones, err1 = _safe_get("/api/zones")
+    readings, err2 = _safe_get("/api/readings/latest")
+    sensors_cfg, err3 = _safe_get("/api/sensors")
 
-    fridge_temp = "—"
-    freezer_temp = "—"
-    fridge_color = "#6c757d"
-    freezer_color = "#6c757d"
+    if err1 or err2 or err3:
+        error_msg = html.Div(
+            f"⚠ Backend non raggiungibile: {err1 or err2 or err3}",
+            style={"background": "#fef3c7", "border": "1px solid #f59e0b",
+                   "borderRadius": "8px", "padding": "10px 16px",
+                   "fontSize": "13px", "color": "#92400e", "marginBottom": "16px"},
+        )
+        return [], html.Div("–"), "–", error_msg, {"display": "block"}
 
-    for r in latest:
-        if r.get("zone") == "fridge":
-            fridge_temp = f"{r['temperature']:.1f}°C"
-            fridge_color = "#1D9E75"
-        elif r.get("zone") == "freezer":
-            freezer_temp = f"{r['temperature']:.1f}°C"
-            freezer_color = "#1D9E75"
+    # Build zone cards
+    readings_map = {r["sensor_id"]: r for r in (readings or [])}
+    sensor_map = {s["sensor_id"]: s for s in (sensors_cfg or [])}
 
-    active_alerts = len([a for a in alerts if a.get("level") == "CRITICAL"])
-    alert_color = "#E24B4A" if active_alerts > 0 else "#1D9E75"
+    zone_cards = []
+    all_sensor_rows = []
 
-    return (
-        metric_card("Frigorifero", fridge_temp, fridge_color),
-        metric_card("Freezer", freezer_temp, freezer_color),
-        metric_card("Allarmi attivi", str(active_alerts), alert_color),
-        metric_card("Sensori online", str(len(latest)), "#3B82F6"),
-    )
+    for zone in (zones or []):
+        zone_name = zone["name"]
+        zone_color = zone.get("color", "#64748b")
+        t_min = zone.get("threshold_min", 0)
+        t_max = zone.get("threshold_max", 30)
 
+        zone_sensors = [s for s in sensor_map.values() if s.get("zone") == zone_name]
+        sensor_data = []
+        temps = []
+        for s in zone_sensors:
+            r = readings_map.get(s["sensor_id"], {})
+            t = r.get("temperature")
+            if t is not None:
+                temps.append(t)
+            sensor_data.append({
+                "id": s["sensor_id"], "name": s.get("name", s["sensor_id"]),
+                "temp": t, "battery_pct": r.get("battery"),
+            })
+            all_sensor_rows.append({
+                "id": s["sensor_id"], "name": s.get("name", s["sensor_id"]),
+                "zone": zone_name, "zone_color": zone_color,
+                "temp": t, "battery_pct": r.get("battery"),
+                "last_seen_s": r.get("age_seconds"),
+            })
 
-@callback(
-    Output("zone-card-fridge", "children"),
-    Output("zone-card-freezer", "children"),
-    Input("interval-30s", "n_intervals"),
-)
-def update_zone_cards(_n):
-    latest = _fetch("/readings/latest")
-    thresholds_data = _fetch("/thresholds")
-
-    cards = [html.Div(), html.Div()]
-
-    for r in latest:
-        zone_name = r.get("zone", "")
-        sensor_id = r.get("sensor_id", "")
-        temp = r.get("temperature", 0)
-
-        # Get effective thresholds
-        eff_min, eff_max = 0.0, 30.0
-        has_override = False
-        if isinstance(thresholds_data, dict):
-            sensors = thresholds_data.get("sensors", {})
-            if sensor_id in sensors:
-                s = sensors[sensor_id]
-                eff_min = s.get("effective_min", 0)
-                eff_max = s.get("effective_max", 30)
-                has_override = s.get("override", False)
-            else:
-                defaults = thresholds_data.get("defaults", {})
-                d = defaults.get(zone_name, {})
-                eff_min = d.get("min", 0)
-                eff_max = d.get("max", 30)
-
-        # Determine status
-        if temp < eff_min or temp > eff_max:
-            status = "critical"
+        avg_temp = sum(temps) / len(temps) if temps else None
+        if avg_temp is None:
+            status = "OK"
+        elif t_min <= avg_temp <= t_max:
+            status = "OK"
+        elif avg_temp < t_min - 5 or avg_temp > t_max + 5:
+            status = "CRITICAL"
         else:
-            status = "ok"
+            status = "WARNING"
 
-        label = "Frigorifero" if zone_name == "fridge" else "Freezer"
-        card = zone_card(label, temp, eff_min, eff_max, status, sensor_id, has_override)
+        zone_cards.append(zone_card(zone_name, zone_color, status, avg_temp,
+                                    sensor_data, t_min, t_max))
 
-        if zone_name == "fridge":
-            cards[0] = card
-        else:
-            cards[1] = card
-
-    return cards[0], cards[1]
+    ts = datetime.now().strftime("Aggiornato alle %H:%M:%S")
+    return zone_cards, sensors_table(all_sensor_rows), ts, "", {"display": "none"}
 
 
 @callback(
-    Output("chart-24h", "figure"),
+    Output("dashboard-chart", "figure"),
     Input("interval-30s", "n_intervals"),
+    Input("chart-range-6h", "n_clicks"),
+    Input("chart-range-24h", "n_clicks"),
+    Input("chart-range-7d", "n_clicks"),
 )
-def update_chart(_n):
-    readings = _fetch("/readings", {"limit": 500})
-    if not readings:
+def update_chart(n, _6h, _24h, _7d):
+    # Determine hours from which button was clicked
+    triggered = ctx.triggered_id
+    if triggered == "chart-range-6h":
+        hours = 6
+    elif triggered == "chart-range-7d":
+        hours = 168
+    else:
+        hours = 24  # default: 24h
+
+    now = datetime.now(timezone.utc)
+    from_dt = (now - timedelta(hours=hours)).isoformat()
+    readings, err = _safe_get(f"/api/readings?limit=500&from={from_dt}")
+    if err or not readings:
         return empty_chart("In attesa di dati...")
 
-    thresholds_data = _fetch("/thresholds")
+    thresholds_data, _ = _safe_get("/api/thresholds")
     th = {}
     if isinstance(thresholds_data, dict):
         for sid, s in thresholds_data.get("sensors", {}).items():
@@ -130,59 +113,19 @@ def update_chart(_n):
 
 
 @callback(
-    Output("sensors-table", "children"),
-    Input("interval-30s", "n_intervals"),
+    Output("sidebar-alert-badge", "children"),
+    Output("sidebar-alert-badge", "style"),
+    Input("interval-60s", "n_intervals"),
 )
-def update_sensors_table(_n):
-    latest = _fetch("/readings/latest")
-    if not latest:
-        return html.P("Nessun sensore rilevato", className="text-muted")
-
-    rows = []
-    for r in latest:
-        status_color = "#1D9E75"
-        battery_text = f"{r['battery']}%" if r.get("battery") is not None else "—"
-
-        rows.append(
-            html.Tr([
-                html.Td(html.Span("●", style={"color": status_color})),
-                html.Td(r.get("sensor_id", "")),
-                html.Td(r.get("zone", "")),
-                html.Td(f"{r['temperature']:.1f}°C"),
-                html.Td(battery_text),
-                html.Td(str(r.get("timestamp", ""))[:19]),
-            ])
-        )
-
-    return dbc.Table(
-        [
-            html.Thead(html.Tr([
-                html.Th("", style={"width": "30px"}),
-                html.Th("Sensore"),
-                html.Th("Zona"),
-                html.Th("Temperatura"),
-                html.Th("Batteria"),
-                html.Th("Ultimo aggiornamento"),
-            ])),
-            html.Tbody(rows),
-        ],
-        bordered=True,
-        hover=True,
-        responsive=True,
-        className="table-dark",
-    )
-
-
-@callback(
-    Output("demo-banner-container", "children"),
-    Input("interval-30s", "n_intervals"),
-)
-def update_demo_banner(_n):
-    data = _fetch("/demo/status")
-    if isinstance(data, dict) and data.get("active"):
-        return demo_banner(
-            scenario=data.get("scenario", ""),
-            speed=data.get("speed", ""),
-            visible=True,
-        )
-    return html.Div()
+def update_alert_badge(n):
+    base_style = {"background": "#ef4444", "color": "#fff", "borderRadius": "10px",
+                  "padding": "0 6px", "fontSize": "10px", "fontWeight": "700"}
+    data, err = _safe_get("/api/alerts?acknowledged=false&limit=100")
+    if err or data is None:
+        return "0", {**base_style, "display": "none"}
+    # data may be a list or a dict with "alerts" key — handle both
+    items = data if isinstance(data, list) else data.get("alerts", [])
+    count = len(items)
+    if count == 0:
+        return "0", {**base_style, "display": "none"}
+    return str(count), {**base_style, "display": "inline"}

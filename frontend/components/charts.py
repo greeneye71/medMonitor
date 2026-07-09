@@ -57,9 +57,10 @@ def temperature_line_chart(
         title=title,
         xaxis_title="Tempo",
         yaxis_title="Temperatura (°C)",
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        template="plotly_white",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font_color="#0f172a",
         margin=dict(l=40, r=20, t=40, b=40),
         legend=dict(orientation="h", y=-0.2),
         hovermode="x unified",
@@ -72,9 +73,10 @@ def empty_chart(message: str = "Nessun dato disponibile") -> go.Figure:
     """Create an empty chart with a message."""
     fig = go.Figure()
     fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        template="plotly_white",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font_color="#0f172a",
         annotations=[dict(
             text=message,
             xref="paper", yref="paper",

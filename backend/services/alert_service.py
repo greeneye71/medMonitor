@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Any
+from typing import Any, Optional
 
 from backend.dependencies import get_db
 from backend.services.config_service import config_service
@@ -27,6 +27,42 @@ class AlertService:
         self._out_of_range_since: dict[str, datetime] = {}
         # sensor_id -> datetime of last email sent
         self._last_email_sent: dict[str, datetime] = {}
+
+    async def restore_state(self) -> None:
+        """Restore in-memory tracking state from the DB after a restart.
+
+        Loads the most recent alert per sensor within the cooldown window so
+        that we don't fire duplicate emails immediately after a restart, and so
+        that a sensor already CRITICAL before the restart continues to be treated
+        as CRITICAL rather than being reset to WARNING.
+        """
+        try:
+            db = get_db()
+            config = config_service.get_config()
+            cooldown = config.alert_cooldown_minutes
+            # Look back 2× the cooldown so we catch the most recent alert
+            from_dt = datetime.now(timezone.utc) - timedelta(minutes=cooldown * 2)
+            recent_alerts = await db.get_alerts(from_dt=from_dt)
+
+            for alert in recent_alerts:
+                sensor_id = alert.get("sensor_id", "")
+                ts: Optional[datetime] = alert.get("timestamp")
+                if not ts or not sensor_id:
+                    continue
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                # Keep only the most recent per sensor
+                prev = self._last_email_sent.get(sensor_id)
+                if prev is None or ts > prev:
+                    self._last_email_sent[sensor_id] = ts
+
+            if self._last_email_sent:
+                logger.info(
+                    "AlertService restored cooldown state for %d sensor(s)",
+                    len(self._last_email_sent),
+                )
+        except Exception as e:
+            logger.warning("Failed to restore alert state (non-fatal): %s", e)
 
     async def check_alerts(self) -> None:
         """Main check loop — called every 60 seconds."""
@@ -57,7 +93,8 @@ class AlertService:
                     self._out_of_range_since.pop(sensor_id, None)
 
         except Exception as e:
-            logger.error("Alert check failed: %s", e)
+            logger.error("alert_service.check_alerts failed: %s", e, exc_info=True)
+            # Do not re-raise — APScheduler logs but doesn't crash
 
     async def _handle_out_of_range(
         self,

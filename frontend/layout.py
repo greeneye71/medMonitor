@@ -1,107 +1,105 @@
-"""Main layout — navbar + sidebar for multi-page app."""
+"""medMonitor v2 — Main layout con sidebar SaaS light."""
 
-import dash_bootstrap_components as dbc
 from dash import html, dcc
+import dash_bootstrap_components as dbc
 
-SIDEBAR_ITEMS = [
-    {"label": "Dashboard", "href": "/", "icon": "mdi:view-dashboard"},
-    {"label": "Storico", "href": "/storico", "icon": "mdi:chart-line"},
-    {"label": "Allarmi", "href": "/allarmi", "icon": "mdi:bell-alert"},
-    {"label": "Impostazioni", "href": "/impostazioni", "icon": "mdi:cog"},
+NAV_ITEMS = [
+    {"label": "Dashboard",    "href": "/",             "icon": "📊"},
+    {"label": "Storico",      "href": "/storico",      "icon": "📅"},
+    {"label": "Allarmi",      "href": "/allarmi",      "icon": "🔔"},
+    {"label": "Impostazioni", "href": "/impostazioni", "icon": "⚙️"},
+    {"label": "Sistema",      "href": "/sistema",      "icon": "🖥️"},
 ]
 
 
-def make_navbar():
-    """Create top navigation bar."""
-    return dbc.Navbar(
-        dbc.Container(
-            [
-                dbc.NavbarBrand(
-                    [
-                        html.I(className="me-2"),
-                        "medMonitor",
-                    ],
-                    className="ms-2 fw-bold",
-                ),
-                dbc.Nav(
-                    [
-                        html.Span(
-                            [
-                                html.Span("●", id="system-status-dot", className="me-1 status-ok"),
-                                html.Span("Sistema attivo", id="system-status-text"),
-                            ],
-                            className="me-3 small",
-                        ),
-                        dbc.Badge(
-                            "0 allarmi",
-                            id="navbar-alert-badge",
-                            color="success",
-                            className="me-2",
-                        ),
-                    ],
-                    className="ms-auto d-flex align-items-center",
-                    navbar=True,
-                ),
-            ],
-            fluid=True,
-        ),
-        color="dark",
-        dark=True,
-        sticky="top",
-    )
-
-
-def make_sidebar():
-    """Create left sidebar with navigation links."""
-    items = []
-    for item in SIDEBAR_ITEMS:
-        items.append(
-            dbc.NavLink(
-                item["label"],
-                href=item["href"],
-                active="exact",
-                className="sidebar-link",
+def _nav_item(label: str, href: str, icon: str) -> html.A:
+    extra = []
+    if label == "Allarmi":
+        extra = [
+            html.Span(
+                "0",
+                id="sidebar-alert-badge",
+                style={
+                    "background": "#ef4444",
+                    "color": "#fff",
+                    "borderRadius": "10px",
+                    "padding": "0 6px",
+                    "fontSize": "10px",
+                    "fontWeight": "700",
+                    "display": "none",
+                },
             )
-        )
-        if item["label"] == "Allarmi":
-            items.append(html.Hr(className="my-2"))
-
-    return html.Div(
-        [
-            dbc.Nav(items, vertical=True, pills=True, className="flex-column"),
-        ],
-        className="sidebar bg-dark p-3",
-        style={
-            "width": "160px",
-            "position": "fixed",
-            "top": "56px",
-            "left": 0,
-            "bottom": 0,
-            "overflowY": "auto",
-        },
+        ]
+    return html.A(
+        [html.Span(icon, style={"marginRight": "8px"}), label] + extra,
+        href=href,
+        id=f"nav-{href.strip('/') or 'dashboard'}",
+        className="mm-nav-item",
     )
 
 
-def make_layout():
-    """Create the full page layout with navbar, sidebar, and content area."""
+def make_sidebar() -> html.Div:
     return html.Div(
         [
-            make_navbar(),
+            html.Div("medMonitor", className="mm-sidebar-brand"),
+            html.Hr(style={"borderColor": "#1e293b", "margin": "0 0 8px"}),
             html.Div(
-                id="demo-banner-container",
+                [_nav_item(i["label"], i["href"], i["icon"]) for i in NAV_ITEMS],
+                style={"flex": 1},
             ),
             html.Div(
                 [
-                    make_sidebar(),
+                    html.Hr(style={"borderColor": "#1e293b", "margin": "8px 0"}),
                     html.Div(
                         [
-                            dcc.Location(id="url", refresh=False),
-                            html.Div(id="page-content", className="p-4"),
+                            html.Span(
+                                "",
+                                id="dot-mqtt",
+                                className="mm-status-dot mm-dot-ok",
+                                title="MQTT",
+                                style={"marginRight": "4px"},
+                            ),
+                            html.Span(
+                                "",
+                                id="dot-scheduler",
+                                className="mm-status-dot mm-dot-ok",
+                                title="Scheduler",
+                                style={"marginRight": "4px"},
+                            ),
+                            html.Span(
+                                "",
+                                id="dot-db",
+                                className="mm-status-dot mm-dot-ok",
+                                title="Database",
+                            ),
                         ],
-                        style={"marginLeft": "160px"},
+                        style={
+                            "padding": "8px 16px 12px",
+                            "display": "flex",
+                            "alignItems": "center",
+                        },
                     ),
-                ],
+                ]
             ),
+        ],
+        className="mm-sidebar",
+    )
+
+
+def make_layout() -> html.Div:
+    return html.Div(
+        [
+            make_sidebar(),
+            html.Div(
+                [
+                    dcc.Location(id="url", refresh=False),
+                    html.Div(id="demo-banner-container"),
+                    html.Div(id="page-content"),
+                ],
+                className="mm-main",
+            ),
+            # Intervals — globali, sempre attivi
+            dcc.Interval(id="interval-5s",  interval=5_000,  n_intervals=0),
             dcc.Interval(id="interval-30s", interval=30_000, n_intervals=0),
             dcc.Interval(id="interval-60s", interval=60_000, n_intervals=0),
         ]

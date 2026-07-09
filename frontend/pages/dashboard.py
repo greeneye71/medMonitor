@@ -1,59 +1,73 @@
-"""Dashboard page — real-time temperature monitoring."""
+"""Dashboard page layout v2."""
 
-import dash_bootstrap_components as dbc
 from dash import html, dcc
-
-from frontend.components.metric_card import metric_card
-from frontend.components.charts import empty_chart
 
 
 def layout():
-    """Create dashboard page layout."""
     return html.Div(
         [
-            html.H4("Dashboard", className="mb-3"),
-
-            # Metric cards row
-            dbc.Row(
+            # Page header
+            html.Div(
                 [
-                    dbc.Col(html.Div(id="metric-fridge"), md=3),
-                    dbc.Col(html.Div(id="metric-freezer"), md=3),
-                    dbc.Col(html.Div(id="metric-alerts"), md=3),
-                    dbc.Col(html.Div(id="metric-sensors"), md=3),
-                ],
-                className="mb-3",
-            ),
-
-            # Zone cards row
-            dbc.Row(
-                [
-                    dbc.Col(html.Div(id="zone-card-fridge"), md=6),
-                    dbc.Col(html.Div(id="zone-card-freezer"), md=6),
-                ],
-                className="mb-3",
-            ),
-
-            # Temperature chart
-            dbc.Card(
-                dbc.CardBody(
-                    dcc.Graph(
-                        id="chart-24h",
-                        figure=empty_chart("In attesa di dati..."),
-                        config={"displayModeBar": False},
-                        style={"height": "350px"},
+                    html.H1("Dashboard", className="mm-page-title"),
+                    html.Div(
+                        [
+                            html.Span("–", id="dashboard-updated-ts",
+                                      style={"fontSize": "12px", "color": "#94a3b8", "marginRight": "8px"}),
+                            html.Button("↻ Aggiorna", id="dashboard-refresh-btn",
+                                        style={"background": "none", "border": "1px solid #e2e8f0",
+                                               "borderRadius": "6px", "padding": "4px 10px",
+                                               "fontSize": "12px", "cursor": "pointer", "color": "#64748b"}),
+                        ],
+                        style={"display": "flex", "alignItems": "center"},
                     ),
-                ),
-                className="mb-3",
+                ],
+                className="mm-page-header",
             ),
-
+            # Error banner (hidden by default)
+            html.Div(id="dashboard-error-banner", style={"display": "none"}),
+            # Zone cards grid
+            html.Div(id="dashboard-zone-cards",
+                     style={"display": "grid",
+                            "gridTemplateColumns": "repeat(auto-fill, minmax(280px, 1fr))",
+                            "gap": "16px", "marginBottom": "20px"}),
+            # 24h chart
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Div("Temperatura — ultime 24h", style={"fontSize": "14px", "fontWeight": "700"}),
+                            html.Div(
+                                [
+                                    html.Button("6h",  id="chart-range-6h",  n_clicks=0,
+                                                style={"background": "#f1f5f9", "border": "none", "borderRadius": "6px",
+                                                       "padding": "4px 10px", "fontSize": "11px", "color": "#64748b", "cursor": "pointer"}),
+                                    html.Button("24h", id="chart-range-24h", n_clicks=0,
+                                                style={"background": "#0f172a", "border": "none", "borderRadius": "6px",
+                                                       "padding": "4px 10px", "fontSize": "11px", "color": "#fff", "cursor": "pointer"}),
+                                    html.Button("7g",  id="chart-range-7d",  n_clicks=0,
+                                                style={"background": "#f1f5f9", "border": "none", "borderRadius": "6px",
+                                                       "padding": "4px 10px", "fontSize": "11px", "color": "#64748b", "cursor": "pointer"}),
+                                ],
+                                style={"display": "flex", "gap": "4px"},
+                            ),
+                        ],
+                        style={"display": "flex", "justifyContent": "space-between", "alignItems": "center",
+                               "marginBottom": "12px"},
+                    ),
+                    dcc.Graph(id="dashboard-chart", config={"displayModeBar": False},
+                              style={"height": "300px"}),
+                ],
+                className="mm-card",
+                style={"marginBottom": "20px"},
+            ),
             # Sensors table
-            dbc.Card(
-                dbc.CardBody(
-                    [
-                        html.H6("Sensori", className="mb-2"),
-                        html.Div(id="sensors-table"),
-                    ]
-                ),
+            html.Div(
+                [
+                    html.Div("Sensori", style={"fontSize": "14px", "fontWeight": "700", "marginBottom": "12px"}),
+                    html.Div(id="dashboard-sensors-table"),
+                ],
+                className="mm-card",
             ),
         ]
     )

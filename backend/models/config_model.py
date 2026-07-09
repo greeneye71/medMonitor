@@ -44,7 +44,7 @@ class ThresholdsConfig(BaseModel):
 
 class SmtpConfig(BaseModel):
     """SMTP email configuration."""
-    host: str = "smtp.example.com"
+    host: str = ""
     port: int = 587
     use_tls: bool = True
     user: str = ""
@@ -77,9 +77,13 @@ class AppConfig(BaseModel):
     polling_interval_minutes: int = 10
     alert_cooldown_minutes: int = 30
     data_retention_days: int = 365
+    archive_after_days: int = 180
     database_backend: str = "tinyflux"
     thresholds: ThresholdsConfig = Field(default_factory=ThresholdsConfig)
     email: EmailConfig = Field(default_factory=EmailConfig)
+    zone_colors: dict[str, str] = Field(
+        default_factory=lambda: {"fridge": "#22c55e", "freezer": "#3b82f6"}
+    )
 
 
 class ConfigPatch(BaseModel):
@@ -93,9 +97,8 @@ class ConfigPatch(BaseModel):
 
 
 class ThresholdDefaultsPatch(BaseModel):
-    """Update zone default thresholds."""
-    fridge: ZoneThresholds | None = None
-    freezer: ZoneThresholds | None = None
+    """Update zone default thresholds — generico per zone arbitrarie."""
+    zones: dict[str, ZoneThresholds] | None = None
 
 
 class SensorThresholdPatch(BaseModel):

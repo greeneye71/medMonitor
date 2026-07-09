@@ -1,6 +1,8 @@
 """TimescaleDB (asyncpg) implementation of DatabaseAdapter."""
 
+import asyncio
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,11 +19,17 @@ class TimescaleAdapter(DatabaseAdapter):
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
         self._pool: asyncpg.Pool | None = None
+        self._pool_lock = asyncio.Lock()
 
     async def _ensure_pool(self) -> asyncpg.Pool:
-        if self._pool is None:
-            self._pool = await asyncpg.create_pool(self._dsn, min_size=2, max_size=10)
-            logger.info("TimescaleDB connection pool created")
+        # Fast path: pool already created
+        if self._pool is not None:
+            return self._pool
+        # Slow path: acquire lock, double-check, then create
+        async with self._pool_lock:
+            if self._pool is None:
+                self._pool = await asyncpg.create_pool(self._dsn, min_size=2, max_size=10)
+                logger.info("TimescaleDB connection pool created")
         return self._pool
 
     async def write_reading(self, reading: dict[str, Any]) -> None:
@@ -72,14 +80,18 @@ class TimescaleAdapter(DatabaseAdapter):
             idx += 1
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        params.append(limit)
+
+        limit_clause = ""
+        if limit is not None:
+            params.append(limit)
+            limit_clause = f"LIMIT ${idx}"
 
         query = f"""
             SELECT zone, sensor_id, temperature, humidity, battery, timestamp
             FROM temperature_readings
             {where}
             ORDER BY timestamp DESC
-            LIMIT ${idx}
+            {limit_clause}
         """
 
         rows = await pool.fetch(query, *params)
@@ -98,12 +110,15 @@ class TimescaleAdapter(DatabaseAdapter):
     async def write_alert(self, alert: dict[str, Any]) -> None:
         pool = await self._ensure_pool()
         ts = alert.get("timestamp", datetime.now(timezone.utc))
+        alert_id = alert.get("id") or str(uuid.uuid4())[:8]
         await pool.execute(
             """
             INSERT INTO alerts
-                (zone, sensor_id, temperature, level, threshold_min, threshold_max, message, timestamp)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                (id, zone, sensor_id, temperature, level, threshold_min,
+                 threshold_max, message, timestamp, resolved)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             """,
+            alert_id,
             alert["zone"],
             alert["sensor_id"],
             float(alert["temperature"]),
@@ -112,7 +127,19 @@ class TimescaleAdapter(DatabaseAdapter):
             float(alert["threshold_max"]),
             alert.get("message", ""),
             ts,
+            alert.get("resolved", False),
         )
+
+    async def resolve_alert(self, alert_id: str) -> bool:
+        """Mark an alert as resolved in TimescaleDB."""
+        pool = await self._ensure_pool()
+        result = await pool.execute(
+            "UPDATE alerts SET resolved = TRUE WHERE id = $1",
+            alert_id,
+        )
+        # asyncpg returns "UPDATE N" — N>0 means a row was updated
+        updated = int(result.split()[-1]) if result else 0
+        return updated > 0
 
     async def get_alerts(
         self,
@@ -145,15 +172,19 @@ class TimescaleAdapter(DatabaseAdapter):
             idx += 1
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        params.append(limit)
+
+        limit_clause = ""
+        if limit is not None:
+            params.append(limit)
+            limit_clause = f"LIMIT ${idx}"
 
         query = f"""
-            SELECT zone, sensor_id, temperature, level, threshold_min,
-                   threshold_max, message, timestamp
+            SELECT id, zone, sensor_id, temperature, level, threshold_min,
+                   threshold_max, message, timestamp, resolved
             FROM alerts
             {where}
             ORDER BY timestamp DESC
-            LIMIT ${idx}
+            {limit_clause}
         """
 
         rows = await pool.fetch(query, *params)
@@ -194,7 +225,9 @@ class TimescaleAdapter(DatabaseAdapter):
 
     @staticmethod
     def _row_to_alert(row: asyncpg.Record) -> dict[str, Any]:
+        keys = row.keys()
         return {
+            "id": row["id"] if "id" in keys else "",
             "zone": row["zone"],
             "sensor_id": row["sensor_id"],
             "temperature": float(row["temperature"]),
@@ -203,4 +236,5 @@ class TimescaleAdapter(DatabaseAdapter):
             "threshold_max": float(row["threshold_max"]),
             "message": row["message"],
             "timestamp": row["timestamp"],
+            "resolved": bool(row["resolved"]) if "resolved" in keys else False,
         }
