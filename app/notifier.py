@@ -88,7 +88,12 @@ def notify(db: Database, now: datetime, kind: str, sensor: dict | None = None, *
 
 
 async def send_email(smtp: dict, recipients: list[str], subject: str, text: str,
-                     html_doc: str) -> None:
+                     html_doc: str) -> dict:
+    """Send one email. Returns the recipients refused by the server ({} if none).
+
+    aiosmtplib raises only when *every* recipient is refused; a partial refusal is reported
+    in the return value instead.
+    """
     msg = EmailMessage()
     msg["From"] = smtp.get("sender") or smtp.get("user")
     msg["To"] = ", ".join(recipients)
@@ -96,15 +101,21 @@ async def send_email(smtp: dict, recipients: list[str], subject: str, text: str,
     msg.set_content(text)
     msg.add_alternative(html_doc, subtype="html")
     security = smtp.get("security", "starttls")
-    await aiosmtplib.send(
+    refused, _ = await aiosmtplib.send(
         msg, hostname=smtp["host"], port=int(smtp.get("port") or 587),
         username=smtp.get("user") or None, password=smtp.get("password") or None,
         use_tls=security == "ssl", start_tls=security == "starttls", timeout=30)
+    return refused
 
 
 def send_now(smtp: dict, recipients: list[str], subject: str, text: str, html_doc: str,
-             sender=send_email) -> None:
-    asyncio.run(sender(smtp, recipients, subject, text, html_doc))
+             sender=send_email) -> dict:
+    """Synchronous send. Returns the refused recipients ({} if all accepted)."""
+    return asyncio.run(sender(smtp, recipients, subject, text, html_doc)) or {}
+
+
+def refused_text(refused: dict) -> str:
+    return ", ".join(f"{addr} ({err[0]} {err[1]})"[:200] for addr, err in refused.items())
 
 
 def process_outbox(db: Database, now: datetime, sender=send_email) -> int:
@@ -119,7 +130,8 @@ def process_outbox(db: Database, now: datetime, sender=send_email) -> int:
         if row["attempts"] >= MAX_FAST_ATTEMPTS and last and now - last < SLOW_RETRY:
             continue
         try:
-            send_now(smtp, recipients, row["subject"], row["body_text"], row["body_html"], sender)
+            refused = send_now(smtp, recipients, row["subject"], row["body_text"],
+                               row["body_html"], sender)
         except Exception as exc:  # noqa: BLE001 - any SMTP/network failure is retried
             attempts = row["attempts"] + 1
             log.warning("invio email %s fallito (tentativo %s): %s", row["id"], attempts, exc)
@@ -132,6 +144,12 @@ def process_outbox(db: Database, now: datetime, sender=send_email) -> int:
             continue
         db.execute("UPDATE outbox SET sent_at=?, last_attempt_at=? WHERE id=?",
                    (iso(now), iso(now), row["id"]))
+        if refused:
+            # delivered to the others: no retry (it would duplicate), but make it visible
+            log.warning("email %s: destinatari rifiutati %s", row["id"], refused)
+            db.add_event(now, None, "EMAIL_ERROR",
+                         f"Destinatari rifiutati dal server: {refused_text(refused)} "
+                         f"— {row['subject']}")
         sent += 1
     return sent
 

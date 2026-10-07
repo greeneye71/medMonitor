@@ -94,12 +94,13 @@ def handle_message(db: Database, state: BridgeState, topic: str, payload: bytes,
         "WHERE ieee=? AND active=1", (float(temp), battery, iso(now), ieee))
     if cur.rowcount == 0:
         db.execute(
-            "INSERT INTO discovered(ieee,friendly_name,model,first_seen,last_temp) "
-            "VALUES(?,?,?,?,?) ON CONFLICT(ieee) DO UPDATE SET last_temp=excluded.last_temp, "
-            "friendly_name=excluded.friendly_name",
-            (ieee, sub, state.models.get(ieee, ""), iso(now), float(temp)))
+            "INSERT INTO discovered(ieee,friendly_name,model,first_seen,last_temp,last_seen) "
+            "VALUES(?,?,?,?,?,?) ON CONFLICT(ieee) DO UPDATE SET last_temp=excluded.last_temp, "
+            "last_seen=excluded.last_seen, friendly_name=excluded.friendly_name",
+            (ieee, sub, state.models.get(ieee, ""), iso(now), float(temp), iso(now)))
     else:
-        db.execute("UPDATE discovered SET last_temp=? WHERE ieee=?", (float(temp), ieee))
+        db.execute("UPDATE discovered SET last_temp=?, last_seen=? WHERE ieee=?",
+                   (float(temp), iso(now), ieee))
 
 
 class MqttService:

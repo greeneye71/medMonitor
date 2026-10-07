@@ -97,3 +97,11 @@ def test_inactive_sensor_goes_to_discovered(db):
     msg(db, st, "frigo_farmacia", {"temperature": 3.3})
     assert db.one("SELECT last_temp FROM sensors")["last_temp"] == 5.0
     assert db.one("SELECT last_temp FROM discovered WHERE ieee='0x01'")["last_temp"] == 3.3
+
+
+def test_discovered_records_last_seen(db):
+    st = BridgeState()
+    msg(db, st, "bridge/devices", DEVICES)
+    msg(db, st, "nuovo", {"temperature": 6.1})
+    d = db.one("SELECT first_seen, last_seen FROM discovered WHERE ieee='0x02'")
+    assert d["last_seen"] is not None and d["last_seen"] >= d["first_seen"]

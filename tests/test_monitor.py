@@ -120,6 +120,25 @@ def test_mute_expired_after_close_sends_nothing(db):
     assert outbox(db) == []
 
 
+def test_mute_expired_recovered_same_cycle_no_alarm_email(db):
+    setup_sensor(db)
+    db.execute("UPDATE sensors SET muted_until=?", (iso(T0 + 3 * STEP + timedelta(minutes=5)),))
+    cycle(db, 0, temp=12)
+    cycle(db, 1, temp=12)
+    cycle(db, 4, temp=5)                      # mute expired, back in range in this same cycle
+    assert not any("ALLARME" in s for s in outbox(db))
+
+
+def test_mute_expired_alarm_opened_same_cycle_sent_once(db):
+    setup_sensor(db)
+    db.execute("UPDATE sensors SET muted_until=?", (iso(T0 + 3 * STEP + timedelta(minutes=5)),))
+    cycle(db, 0, battery=10)                  # battery alarm suppressed -> mute_pending
+    cycle(db, 3, temp=12)
+    cycle(db, 4, temp=12)                     # mute expired, temp alarm opens now
+    temp_mails = [s for s in outbox(db) if "TEMPERATURA" in s]
+    assert len(temp_mails) == 1
+
+
 def test_inactive_sensor_ignored(db):
     add_sensor(db, last_seen_at=None, active=0)
     monitor.run_cycle(db, T0)
@@ -135,3 +154,22 @@ def test_state_survives_restart(tmp_path):
     cycle(db, 1, temp=9)
     assert events(db) == ["TEMP_OPEN"]
     db.close()
+
+
+def test_crash_mid_evaluation_rolls_back_sensor(db, monkeypatch):
+    import pytest
+    setup_sensor(db)
+    cycle(db, 0, temp=9.4)
+    real_notify = monitor.notify
+
+    def boom(*a, **k):
+        raise RuntimeError("crash")
+    monkeypatch.setattr(monitor, "notify", boom)
+    with pytest.raises(RuntimeError):
+        cycle(db, 1, temp=9.6)
+    # nothing half-written: no event without its email, state unchanged
+    assert events(db) == [] and outbox(db) == []
+    assert db.one("SELECT temp_open FROM alert_state")["temp_open"] == 0
+    monkeypatch.setattr(monitor, "notify", real_notify)
+    cycle(db, 2, temp=9.8)
+    assert events(db) == ["TEMP_OPEN"] and len(outbox(db)) == 1

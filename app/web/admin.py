@@ -2,6 +2,7 @@
 
 Handlers are plain `def` (run in the threadpool) because send_now uses asyncio.run.
 """
+import math
 import re
 import time
 from datetime import timedelta
@@ -36,9 +37,10 @@ def _back(tab: str) -> RedirectResponse:
 
 def _float(value: str) -> float | None:
     try:
-        return float(value.strip().replace(",", ".").replace("−", "-"))
+        n = float(value.strip().replace(",", ".").replace("−", "-"))
     except (ValueError, AttributeError):
         return None
+    return n if math.isfinite(n) else None
 
 
 def _int(value: str, lo: int, hi: int) -> int | None:
@@ -129,7 +131,7 @@ def add_sensor(request: Request, ieee: str = Form(...), name: str = Form(""),
         flash(request, th if isinstance(th, str) else "Inserisci un nome per il sensore.", "alarm")
         return _back("sensori")
     now = utcnow()
-    seen = iso(now) if found["last_temp"] is not None else None
+    seen = found["last_seen"]                 # real time of last reading, not "now"
     db.execute(
         "INSERT INTO sensors(ieee,name,kind,min_c,max_c,active,last_temp,last_seen_at,created_at) "
         "VALUES(?,?,?,?,?,1,?,?,?) ON CONFLICT(ieee) DO UPDATE SET name=excluded.name, "
@@ -266,10 +268,14 @@ def email_test(request: Request):
         flash(request, "Configura server SMTP e almeno un destinatario prima della prova.", "warn")
         return _back("email")
     try:
-        notifier.send_now(smtp, recipients, *notifier.render("test", None, utcnow()))
+        refused = notifier.send_now(smtp, recipients, *notifier.render("test", None, utcnow()))
     except Exception as exc:  # noqa: BLE001 - show any SMTP error to the user
         flash(request, f"Invio fallito: {exc}", "alarm")
     else:
+        if refused:
+            flash(request, f"Destinatari rifiutati dal server: {notifier.refused_text(refused)}",
+                  "warn")
+            return _back("email")
         flash(request, f"Email di prova inviata a {', '.join(recipients)}.")
     return _back("email")
 

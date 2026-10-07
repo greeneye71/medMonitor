@@ -1,6 +1,7 @@
 """SQLite access layer (stdlib sqlite3, WAL)."""
 import sqlite3
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -29,7 +30,8 @@ CREATE TABLE IF NOT EXISTS outbox(
     id INTEGER PRIMARY KEY, created_at TEXT, subject TEXT, body_text TEXT, body_html TEXT,
     attempts INTEGER DEFAULT 0, last_error TEXT, last_attempt_at TEXT, sent_at TEXT);
 CREATE TABLE IF NOT EXISTS discovered(
-    ieee TEXT PRIMARY KEY, friendly_name TEXT, model TEXT, first_seen TEXT, last_temp REAL);
+    ieee TEXT PRIMARY KEY, friendly_name TEXT, model TEXT, first_seen TEXT, last_temp REAL,
+    last_seen TEXT);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
 """
 
@@ -68,6 +70,12 @@ class Database:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA busy_timeout=5000")
         self.conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(discovered)")}
+        if "last_seen" not in cols:
+            self.conn.execute("ALTER TABLE discovered ADD COLUMN last_seen TEXT")
 
     def execute(self, sql: str, params=()) -> sqlite3.Cursor:
         with self.lock:
@@ -85,6 +93,18 @@ class Database:
                   message: str, value: float | None = None) -> None:
         self.execute("INSERT INTO events(ts,sensor_id,type,message,value) VALUES(?,?,?,?,?)",
                      (iso(now), sensor_id, type_, message, value))
+
+    @contextmanager
+    def transaction(self):
+        """All-or-nothing block; other threads wait on the lock meanwhile."""
+        with self.lock:
+            self.conn.execute("BEGIN")
+            try:
+                yield
+            except BaseException:
+                self.conn.execute("ROLLBACK")
+                raise
+            self.conn.execute("COMMIT")
 
     def close(self) -> None:
         self.conn.close()

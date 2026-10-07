@@ -4,7 +4,7 @@ import io
 import re
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 
 from app import notifier, settings
@@ -81,6 +81,7 @@ def overview_context(request: Request) -> dict:
     alarms = sum(c["status"] == "alarm" for c in cards)
     offline = sum(c["status"] == "offline" for c in cards)
     failing = notifier.failing_count(db)
+    email_ready = bool(settings.get(db, "smtp")["host"] and settings.get(db, "recipients"))
     if alarms:
         band = ("alarm", f"{alarms} allarm{'e' if alarms == 1 else 'i'} temperatura attiv"
                          f"{'o' if alarms == 1 else 'i'}")
@@ -91,6 +92,8 @@ def overview_context(request: Request) -> dict:
                            f"{'' if offline == 1 else 'no'}")
     elif failing:
         band = ("warn", "Email di allarme non inviate: controlla le impostazioni email")
+    elif cards and not email_ready:
+        band = ("warn", "Email di allarme non configurate: nessuno riceverà gli avvisi")
     elif not cards:
         band = ("muted", "Nessun sensore configurato")
     else:
@@ -121,7 +124,15 @@ def history_query(request: Request, sensor: str | None, period: str, from_: str 
                   to: str | None) -> dict:
     db = request.app.state.db
     sensors = db.query("SELECT * FROM sensors WHERE active=1 ORDER BY name COLLATE NOCASE")
-    current = next((s for s in sensors if s["ieee"] == sensor), sensors[0] if sensors else None)
+    if sensor:
+        # removed sensors keep their history: look them up too, never fall back to another one
+        current = db.one("SELECT * FROM sensors WHERE ieee=?", (sensor,))
+        if current is None:
+            raise HTTPException(404, "Sensore non trovato")
+        if not current["active"]:
+            sensors.append(current)
+    else:
+        current = sensors[0] if sensors else None
     now = utcnow()
     if period == "custom":
         start, end = _local_date(from_), _local_date(to)

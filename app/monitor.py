@@ -45,81 +45,90 @@ def _save_state(db: Database, st: dict) -> None:
 def evaluate(db: Database, now: datetime, sampled: dict[str, float]) -> None:
     """Update alarm state for every active sensor; log events and queue emails."""
     alarm = settings.get(db, "alarm")
+    for s in db.query("SELECT * FROM sensors WHERE active=1"):
+        with db.transaction():      # event, email and state change together or not at all
+            _evaluate_sensor(db, now, sampled, s, alarm)
+
+
+def _evaluate_sensor(db: Database, now: datetime, sampled: dict[str, float], s: dict,
+                     alarm: dict) -> None:
     n_required = int(alarm["consecutive_samples"])
     offline_min = int(alarm["offline_minutes"])
     batt_low = int(alarm["battery_percent"])
+    ieee = s["ieee"]
+    st = _state(db, ieee)
+    muted_until = parse(s["muted_until"])
+    muted = muted_until is not None and muted_until > now
 
-    for s in db.query("SELECT * FROM sensors WHERE active=1"):
-        ieee = s["ieee"]
-        st = _state(db, ieee)
-        muted_until = parse(s["muted_until"])
-        muted = muted_until is not None and muted_until > now
+    sent = set()
 
-        def send(kind, **ctx):
-            if muted:
-                st["mute_pending"] = 1
-            else:
-                notify(db, now, kind, s, **ctx)
+    def send(kind, **ctx):
+        if muted:
+            st["mute_pending"] = 1
+        else:
+            notify(db, now, kind, s, **ctx)
+            sent.add(kind)
 
-        # Mute expired after suppressed emails: re-send opening email for alerts still open.
-        if st["mute_pending"] and not muted:
-            st["mute_pending"] = 0
+    # OFFLINE
+    offline = is_offline(s, now, offline_min)
+    if offline and not st["offline_open"]:
+        st["offline_open"] = 1
+        db.add_event(now, ieee, "OFFLINE_OPEN",
+                     f"{s['name']}: nessun dato da oltre {offline_min} min")
+        send("offline_open", minutes=offline_min)
+    elif not offline and st["offline_open"]:
+        st["offline_open"] = 0
+        db.add_event(now, ieee, "OFFLINE_CLOSE", f"{s['name']}: di nuovo online")
+        send("offline_close")
+
+    # TEMP (evaluated only on a new sample; offline leaves the counter untouched)
+    if ieee in sampled:
+        temp = sampled[ieee]
+        if temp < s["min_c"] or temp > s["max_c"]:
+            st["consecutive_out"] += 1
+            if st["consecutive_out"] == 1:
+                st["temp_since"] = iso(now)
+            if st["consecutive_out"] >= n_required and not st["temp_open"]:
+                st["temp_open"] = 1
+                db.add_event(now, ieee, "TEMP_OPEN",
+                             f"{s['name']}: {temp:.1f} °C fuori soglia "
+                             f"({s['min_c']:g}…{s['max_c']:g} °C)", temp)
+                send("temp_open", value=temp, since=st["temp_since"])
+        else:
             if st["temp_open"]:
-                notify(db, now, "temp_open", s, value=s["last_temp"], since=st["temp_since"])
-            if st["offline_open"]:
-                notify(db, now, "offline_open", s, minutes=offline_min)
-            if st["battery_open"]:
-                notify(db, now, "battery_open", s)
+                dur = _duration(now - (parse(st["temp_since"]) or now))
+                st["temp_open"] = 0
+                db.add_event(now, ieee, "TEMP_CLOSE",
+                             f"{s['name']}: temperatura rientrata ({temp:.1f} °C, "
+                             f"durata {dur})", temp)
+                send("temp_close", value=temp, duration=dur)
+            st["consecutive_out"] = 0
+            st["temp_since"] = None
 
-        # OFFLINE
-        offline = is_offline(s, now, offline_min)
-        if offline and not st["offline_open"]:
-            st["offline_open"] = 1
-            db.add_event(now, ieee, "OFFLINE_OPEN",
-                         f"{s['name']}: nessun dato da oltre {offline_min} min")
-            send("offline_open", minutes=offline_min)
-        elif not offline and st["offline_open"]:
-            st["offline_open"] = 0
-            db.add_event(now, ieee, "OFFLINE_CLOSE", f"{s['name']}: di nuovo online")
-            send("offline_close")
+    # BATTERY (hysteresis +5%, close without email)
+    batt = s["last_battery"]
+    if batt is not None:
+        if batt < batt_low and not st["battery_open"]:
+            st["battery_open"] = 1
+            db.add_event(now, ieee, "BATTERY_OPEN", f"{s['name']}: batteria al {batt}%", batt)
+            send("battery_open")
+        elif batt >= batt_low + 5 and st["battery_open"]:
+            st["battery_open"] = 0
+            db.add_event(now, ieee, "BATTERY_CLOSE", f"{s['name']}: batteria al {batt}%",
+                         batt)
 
-        # TEMP (evaluated only on a new sample; offline leaves the counter untouched)
-        if ieee in sampled:
-            temp = sampled[ieee]
-            if temp < s["min_c"] or temp > s["max_c"]:
-                st["consecutive_out"] += 1
-                if st["consecutive_out"] == 1:
-                    st["temp_since"] = iso(now)
-                if st["consecutive_out"] >= n_required and not st["temp_open"]:
-                    st["temp_open"] = 1
-                    db.add_event(now, ieee, "TEMP_OPEN",
-                                 f"{s['name']}: {temp:.1f} °C fuori soglia "
-                                 f"({s['min_c']:g}…{s['max_c']:g} °C)", temp)
-                    send("temp_open", value=temp, since=st["temp_since"])
-            else:
-                if st["temp_open"]:
-                    dur = _duration(now - (parse(st["temp_since"]) or now))
-                    st["temp_open"] = 0
-                    db.add_event(now, ieee, "TEMP_CLOSE",
-                                 f"{s['name']}: temperatura rientrata ({temp:.1f} °C, "
-                                 f"durata {dur})", temp)
-                    send("temp_close", value=temp, duration=dur)
-                st["consecutive_out"] = 0
-                st["temp_since"] = None
+    # Mute expired after suppressed emails: re-send the opening email for alerts that are
+    # still open after this cycle's evaluation and were not just notified.
+    if st["mute_pending"] and not muted:
+        st["mute_pending"] = 0
+        if st["temp_open"] and "temp_open" not in sent:
+            notify(db, now, "temp_open", s, value=s["last_temp"], since=st["temp_since"])
+        if st["offline_open"] and "offline_open" not in sent:
+            notify(db, now, "offline_open", s, minutes=offline_min)
+        if st["battery_open"] and "battery_open" not in sent:
+            notify(db, now, "battery_open", s)
 
-        # BATTERY (hysteresis +5%, close without email)
-        batt = s["last_battery"]
-        if batt is not None:
-            if batt < batt_low and not st["battery_open"]:
-                st["battery_open"] = 1
-                db.add_event(now, ieee, "BATTERY_OPEN", f"{s['name']}: batteria al {batt}%", batt)
-                send("battery_open")
-            elif batt >= batt_low + 5 and st["battery_open"]:
-                st["battery_open"] = 0
-                db.add_event(now, ieee, "BATTERY_CLOSE", f"{s['name']}: batteria al {batt}%",
-                             batt)
-
-        _save_state(db, st)
+    _save_state(db, st)
 
 
 def run_cycle(db: Database, now: datetime) -> None:

@@ -120,3 +120,73 @@ def test_clear_smtp_password(admin, app):
 def test_gateway_page_with_malformed_yaml(admin, tmp_path):
     (tmp_path / "configuration.yaml").write_text("serial: [unclosed\n  : :", encoding="utf-8")
     assert admin.get("/impostazioni/gateway").status_code == 200
+
+
+def test_history_of_removed_sensor_not_swapped(client, app):
+    db = app.state.db
+    add_sensor(db, ieee="0x01", name="Frigo rimosso", active=0)
+    add_sensor(db, ieee="0x02", name="Frigo attivo")
+    r = client.get("/storico.csv?sensor=0x01")
+    assert r.status_code == 200
+    assert "Frigo_rimosso" in r.headers["content-disposition"]
+    assert "Frigo rimosso" in client.get("/storico?sensor=0x01").text
+
+
+def test_history_unknown_sensor_404(client, app):
+    add_sensor(app.state.db)
+    assert client.get("/storico.csv?sensor=0xdead").status_code == 404
+    assert client.get("/storico?sensor=0xdead").status_code == 404
+
+
+@pytest.mark.parametrize("bad", ["nan", "NaN", "inf", "-inf"])
+def test_non_finite_thresholds_rejected(admin, app, bad):
+    from app import settings
+    db = app.state.db
+    add_sensor(db)
+    admin.post("/impostazioni/sensori/0x01/modifica",
+               data={"name": "Frigo 1", "kind": "fridge", "min_c": bad, "max_c": "8"})
+    s = db.one("SELECT min_c, max_c FROM sensors WHERE ieee='0x01'")
+    assert (s["min_c"], s["max_c"]) == (2.0, 8.0)
+    admin.post("/impostazioni/allarmi", data={"fridge_min": "2", "fridge_max": bad})
+    assert settings.get(db, "presets")["fridge"]["max"] == 8
+
+
+def test_banner_warns_when_email_not_configured(client, app):
+    from app import settings
+    from app.db import iso, utcnow
+    db = app.state.db
+    add_sensor(db, last_seen_at=iso(utcnow()))
+    assert "Email di allarme non configurate" in client.get("/partials/cards").text
+    settings.set(db, "smtp", {"host": "smtp.x.it"})
+    assert "Email di allarme non configurate" in client.get("/partials/cards").text
+    settings.set(db, "recipients", ["a@x.it"])
+    r = client.get("/partials/cards").text
+    assert "Email di allarme non configurate" not in r and "Tutto regolare" in r
+
+
+def test_test_email_reports_refused_recipient(admin, app, monkeypatch):
+    from aiosmtplib import SMTPResponse
+
+    from app import notifier, settings
+    db = app.state.db
+    settings.set(db, "smtp", {"host": "smtp.x.it"})
+    settings.set(db, "recipients", ["a@x.it", "b@x.it"])
+
+    async def fake_send(msg, **kw):
+        return {"b@x.it": SMTPResponse(550, "no such user")}, "OK"
+    monkeypatch.setattr(notifier.aiosmtplib, "send", fake_send)
+    r = admin.post("/impostazioni/email/prova")
+    assert "Destinatari rifiutati" in r.text and "b@x.it (550 no such user)" in r.text
+
+
+def test_added_sensor_keeps_real_last_seen(admin, app):
+    from datetime import timedelta
+
+    from app.db import iso, utcnow
+    db = app.state.db
+    old = iso(utcnow() - timedelta(hours=5))
+    db.execute("INSERT INTO discovered(ieee, friendly_name, model, first_seen, last_temp, last_seen) "
+               "VALUES('0xaa', '0xaa', 'SNZB-02LD', ?, 4.2, ?)", (old, old))
+    admin.post("/impostazioni/sensori/aggiungi",
+               data={"ieee": "0xaa", "name": "Frigo", "kind": "fridge", "min_c": "2", "max_c": "8"})
+    assert db.one("SELECT last_seen_at FROM sensors WHERE ieee='0xaa'")["last_seen_at"] == old

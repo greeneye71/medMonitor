@@ -69,7 +69,7 @@ def create_app(data_dir: str | Path | None = None, start_services: bool = True,
             app.state.scheduler.start()
         yield
         if app.state.scheduler:
-            app.state.scheduler.shutdown(wait=False)
+            app.state.scheduler.shutdown(wait=True)  # let a running cycle finish
         if app.state.mqtt:
             app.state.mqtt.stop()
         db.close()

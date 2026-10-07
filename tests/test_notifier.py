@@ -68,3 +68,30 @@ def test_unconfigured_smtp_keeps_queue(db):
     assert notifier.process_outbox(db, T0, ok_sender(calls)) == 0
     assert calls == [] and notifier.pending_count(db) == 1
     assert db.one("SELECT attempts FROM outbox")["attempts"] == 0
+
+
+def test_send_email_returns_refused_recipients(monkeypatch):
+    import asyncio
+
+    from aiosmtplib import SMTPResponse
+
+    async def fake_send(msg, **kw):
+        return {"b@example.com": SMTPResponse(550, "mailbox unavailable")}, "OK"
+    monkeypatch.setattr(notifier.aiosmtplib, "send", fake_send)
+    refused = asyncio.run(notifier.send_email({"host": "h"}, ["a@example.com", "b@example.com"],
+                                              "s", "t", "<p>h</p>"))
+    assert list(refused) == ["b@example.com"]
+
+
+def test_partial_refusal_logs_email_error(db):
+    configure(db)
+    settings.set(db, "recipients", ["a@example.com", "b@example.com"])
+    notifier.notify(db, T0, "test")
+
+    async def partial_sender(smtp, recipients, subject, text, html):
+        return {"b@example.com": (550, "mailbox unavailable")}
+    assert notifier.process_outbox(db, T0, partial_sender) == 1
+    assert notifier.pending_count(db) == 0          # delivered to the others: no resend
+    errors = db.query("SELECT message FROM events WHERE type='EMAIL_ERROR'")
+    assert len(errors) == 1 and "b@example.com" in errors[0]["message"]
+    assert "a@example.com" not in errors[0]["message"]
