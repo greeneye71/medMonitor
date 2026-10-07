@@ -21,7 +21,7 @@ SNZB-02LD → SONOFF Dongle-M (Ethernet, tcp://IP:6638, adapter ember)
 
 - `app/main.py` — `create_app(data_dir, start_services, z2m_path)` factory; scheduler jobs:
   sampling cron `*/10`, email outbox every minute, archive daily 03:00, VACUUM Sunday 03:30.
-- `app/mqtt.py` — subscribes `zigbee2mqtt/#`, stores last reading per sensor, pairing (permit_join), discovered devices.
+- `app/mqtt.py` — subscribes `zigbee2mqtt/+` and `zigbee2mqtt/bridge/{devices,state,info}`, stores last reading per sensor, pairing (permit_join), discovered devices.
 - `app/monitor.py` — sampling + alarm rules (N consecutive out-of-range, offline, low battery).
 - `app/notifier.py` — email outbox, SMTP via aiosmtplib, retries; failures logged as `EMAIL_ERROR` events.
 - `app/archive.py` — moves samples older than retention to `archive/YYYY-MM.csv`.
