@@ -14,6 +14,7 @@ Z2M_FRONTEND_PORT=8080
 say()  { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 ok()   { printf '    \033[32mOK\033[0m %s\n' "$*"; }
 die()  { printf '\n\033[1;31mERRORE:\033[0m %s\n' "$*" >&2; exit 1; }
+warn() { printf '    \033[33mATTENZIONE\033[0m %s\n' "$*"; }
 
 # --- 1. Prerequisiti ---------------------------------------------------------
 say "Controllo prerequisiti"
@@ -222,9 +223,17 @@ fi
 
 # --- 7. Verifica -------------------------------------------------------------
 say "Verifica finale"
-for _ in $(seq 1 30); do
+# true if the /health JSON field $1 is true
+healthy() { [[ "$HEALTH" =~ \"$1\":\ *true ]]; }
+for i in $(seq 1 30); do
     if HEALTH="$(curl -fs "http://localhost:$UI_PORT/health")"; then
+        # MQTT needs a few seconds after startup: keep polling before warning
+        if ! healthy mqtt_connected && (( i < 30 )); then sleep 2; continue; fi
         ok "medmonitor risponde: $HEALTH"
+        [[ "$HEALTH" =~ \"db\":\ *\"ok\" ]] || warn "database non accessibile: controlla i log"
+        healthy mqtt_connected || warn "medmonitor non connesso a mosquitto: systemctl --user status mosquitto"
+        healthy scheduler_running || warn "scheduler fermo: nessun campionamento né allarme"
+        healthy gateway_online || warn "gateway Zigbee offline: controlla IP/rete del dongle (Impostazioni → Gateway)"
         IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
         printf '\n\033[1;32mInstallazione completata.\033[0m\n'
         printf '  UI medMonitor:   http://%s:%s\n' "${IP:-localhost}" "$UI_PORT"
