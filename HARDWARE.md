@@ -1,54 +1,41 @@
-# Hardware consigliato
+# Hardware
 
-## Gateway ZigBee
+## Gateway Zigbee: SONOFF Dongle-M
 
-Poiché l'app gira su VM, si usa un gateway con connettività
-Wi-Fi o Ethernet invece di un dongle USB.
+Coordinatore Zigbee con porta Ethernet: si collega alla rete, non alla VM, quindi
+nessun passthrough USB.
 
-### Sonoff ZBBridge Pro (consigliato) ~22 €
-- Wi-Fi 2.4GHz, firmware nativo o Tasmota
-- MQTT nativo, ZigBee 3.0, chip EFR32MG21
+- Firmware coordinatore **EZSP/Ember**, server TCP sulla porta **6638** (impostazione di fabbrica).
+- In zigbee2mqtt: `port: tcp://IP:6638`, `adapter: ember` (lo scrive `install.sh`).
+- Deve avere un **IP fisso**: prenotazione DHCP sul router (consigliato) o IP statico
+  dalla pagina web del dongle. Vedi [INSTALL.md](INSTALL.md), passo 2.
+- Posizionalo in un punto centrale rispetto ai frigoriferi: le pareti metalliche
+  dei frigoriferi attenuano molto il segnale Zigbee.
 
-### SLZB-06 ~35 € (Ethernet, più stabile)
-- Ethernet, open source, compatibile Zigbee2MQTT
+## Sensori: SONOFF SNZB-02LD
 
-## Sensori temperatura
+Sensore di temperatura Zigbee con sonda esterna a cavo e display.
 
-### Frigorifero (0°C / +30°C)
-- Sonoff SNZB-02D: ~14 €, -20/+60°C, ±0.5°C, display LCD
-- MOES ZSS-ZK-THL: ~12 €, -10/+50°C, ±0.3°C
+- La sonda va dentro il frigorifero o il congelatore, il corpo con display e batteria resta fuori:
+  il cavo passa dalla guarnizione della porta e la batteria non lavora al freddo.
+- Riportano anche il livello di batteria, usato per l'allarme "batteria scarica".
+- Abbinamento: tieni premuto il pulsante finché il LED lampeggia (circa 5 s)
+  con la finestra di abbinamento aperta in medMonitor.
 
-### Freezer (-30°C / 0°C)
-- Aqara Temperature T1: ~16 €, -40/+85°C, ±0.3°C  ← consigliato
-- Sonoff SNZB-02P: ~12 €, -40/+85°C, IP65
+Altri sensori di temperatura supportati da zigbee2mqtt funzionano se pubblicano
+il campo `temperature` (e opzionalmente `battery`), ma sono stati provati solo gli SNZB-02LD.
 
-## Costo totale configurazione base
+## VM Fedora
 
-| Componente | Costo |
+| Risorsa | Minimo |
 |---|---|
-| Gateway Sonoff ZBBridge Pro | ~22 € |
-| Sensore frigorifero (SNZB-02D) | ~14 € |
-| Sensore freezer (Aqara T1) | ~16 € |
-| **Totale** | **~52 €** |
+| Sistema | Fedora 39 o successiva, utente non root con `sudo` |
+| CPU | 1 vCPU (2 consigliate) |
+| RAM | 2 GB |
+| Disco | 10 GB liberi |
+| Rete | stessa LAN del Dongle-M (TCP 6638 raggiungibile), SMTP in uscita |
 
-## Requisiti sistema
+Spazio: il database tiene solo gli ultimi 180 giorni (modificabile), il resto va
+nell'archivio CSV, che cresce di circa 200 KB al mese per sensore.
 
-### Windows (nativo)
-
-| Risorsa | Minimo | Consigliato |
-|---|---|---|
-| CPU | 2 core | 4 core |
-| RAM | 4 GB | 8 GB |
-| Disco | 10 GB | 30 GB |
-| OS | Windows 10/11 | Windows 11 Pro |
-| Python | 3.11+ | 3.11+ |
-| Mosquitto | 2.0+ | 2.0+ |
-
-### VM Linux / Docker
-
-| Risorsa | Minimo | Consigliato |
-|---|---|---|
-| CPU | 1 vCPU | 2 vCPU |
-| RAM | 2 GB | 4 GB |
-| Disco | 20 GB | 50 GB |
-| OS | Ubuntu 22.04 LTS | Ubuntu 22.04 LTS |
+Server di posta: qualunque SMTP con STARTTLS (587), SSL/TLS (465) o relay interno (25).
