@@ -3,6 +3,9 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+LOCAL_TZ = ZoneInfo("Europe/Rome")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sensors(
@@ -44,6 +47,15 @@ def parse(s: str | None) -> datetime | None:
         return None
     dt = datetime.fromisoformat(s)
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def local(dt: datetime | str | None, fmt: str = "%d/%m/%Y %H:%M") -> str:
+    """Format a UTC datetime (or ISO string) in Europe/Rome for display."""
+    if isinstance(dt, str):
+        dt = parse(dt)
+    if dt is None:
+        return "—"
+    return dt.astimezone(LOCAL_TZ).strftime(fmt)
 
 
 class Database:
