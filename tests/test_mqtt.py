@@ -76,3 +76,24 @@ def test_ieee_friendly_name_fallback(db):
     st = BridgeState()
     msg(db, st, "0xabc", {"temperature": -18.2})
     assert db.one("SELECT last_temp FROM sensors")["last_temp"] == -18.2
+
+
+def test_non_finite_values_ignored(db):
+    add_sensor(db, ieee="0x01", last_temp=5.0, last_battery=90)
+    st = BridgeState()
+    msg(db, st, "bridge/devices", DEVICES)
+    msg(db, st, "frigo_farmacia", b'{"temperature": NaN}')
+    msg(db, st, "frigo_farmacia", b'{"temperature": Infinity}')
+    assert db.one("SELECT last_temp FROM sensors")["last_temp"] == 5.0
+    msg(db, st, "frigo_farmacia", b'{"temperature": 4.0, "battery": NaN}')
+    s = db.one("SELECT * FROM sensors")
+    assert s["last_temp"] == 4.0 and s["last_battery"] == 90
+
+
+def test_inactive_sensor_goes_to_discovered(db):
+    add_sensor(db, ieee="0x01", last_temp=5.0, active=0)
+    st = BridgeState()
+    msg(db, st, "bridge/devices", DEVICES)
+    msg(db, st, "frigo_farmacia", {"temperature": 3.3})
+    assert db.one("SELECT last_temp FROM sensors")["last_temp"] == 5.0
+    assert db.one("SELECT last_temp FROM discovered WHERE ieee='0x01'")["last_temp"] == 3.3

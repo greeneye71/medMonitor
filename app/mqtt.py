@@ -1,6 +1,7 @@
 """MQTT client for zigbee2mqtt: updates sensors.last_* and tracks bridge state."""
 import json
 import logging
+import math
 import threading
 from dataclasses import dataclass, field
 
@@ -80,16 +81,17 @@ def handle_message(db: Database, state: BridgeState, topic: str, payload: bytes,
     if not isinstance(data, dict):
         return
     temp = data.get("temperature")
-    if not isinstance(temp, (int, float)) or isinstance(temp, bool):
+    if not isinstance(temp, (int, float)) or isinstance(temp, bool) or not math.isfinite(temp):
         return
     ieee = _ieee_for(state, sub)
     if ieee is None:
         return
     battery = data.get("battery")
-    battery = int(battery) if isinstance(battery, (int, float)) else None
+    ok = isinstance(battery, (int, float)) and not isinstance(battery, bool) and math.isfinite(battery)
+    battery = int(battery) if ok else None
     cur = db.execute(
         "UPDATE sensors SET last_temp=?, last_battery=COALESCE(?, last_battery), last_seen_at=? "
-        "WHERE ieee=?", (float(temp), battery, iso(now), ieee))
+        "WHERE ieee=? AND active=1", (float(temp), battery, iso(now), ieee))
     if cur.rowcount == 0:
         db.execute(
             "INSERT INTO discovered(ieee,friendly_name,model,first_seen,last_temp) "

@@ -1,12 +1,14 @@
 """Public pages: overview, history, events, login."""
 import csv
 import io
+import re
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse, Response
 
 from app import notifier, settings
+from app.archive import csv_text
 from app.auth import verify_password
 from app.db import LOCAL_TZ, iso, local, parse, utcnow
 from app.monitor import sensor_status
@@ -174,10 +176,12 @@ def history_csv(request: Request, sensor: str | None = None, period: str = "24h"
     w = csv.writer(buf, delimiter=";")
     w.writerow(["data_ora", "sensore", "temperatura_c", "batteria"])
     for x in ctx["samples"]:
-        w.writerow([local(x["ts"], "%Y-%m-%d %H:%M"), s["name"],
+        w.writerow([local(x["ts"], "%Y-%m-%d %H:%M"), csv_text(s["name"]),
                     f"{x['temp_c']:.1f}".replace(".", ","),
                     "" if x["battery"] is None else x["battery"]])
-    name = f"storico_{(s['name'] if s else 'vuoto').replace(' ', '_')}_{ctx['from_value']}.csv"
+    # Header values must be latin-1: keep the filename plain ASCII.
+    base = re.sub(r"[^A-Za-z0-9_-]+", "_", s["name"] if s else "vuoto").strip("_") or "sensore"
+    name = f"storico_{base}_{re.sub(r'[^0-9-]', '', ctx['from_value'])}.csv"
     return Response("﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 

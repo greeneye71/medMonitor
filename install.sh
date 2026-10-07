@@ -110,7 +110,7 @@ advanced:
 EOF
     ok "creato $Z2M_CONF"
 elif [[ -n "$OLD_GATEWAY" && "$GATEWAY_IP" != "$OLD_GATEWAY" ]]; then
-    sed -i "s#tcp://[0-9.]*:6638#tcp://$GATEWAY_IP:6638#" "$Z2M_CONF"
+    sed -i -E "s#tcp://[0-9.]+:([0-9]+)#tcp://$GATEWAY_IP:\1#" "$Z2M_CONF"
     ok "aggiornato IP gateway in $Z2M_CONF"
 else
     ok "$Z2M_CONF già presente (non modificato)"
@@ -162,7 +162,7 @@ Image=docker.io/koenkk/zigbee2mqtt:2
 Network=medmonitor.network
 Environment=TZ=Europe/Rome
 Volume=$DATA_DIR/z2m:/app/data:z
-PublishPort=$Z2M_FRONTEND_PORT:$Z2M_FRONTEND_PORT
+PublishPort=127.0.0.1:$Z2M_FRONTEND_PORT:$Z2M_FRONTEND_PORT
 
 [Service]
 Restart=always
@@ -228,7 +228,7 @@ for _ in $(seq 1 30); do
         IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
         printf '\n\033[1;32mInstallazione completata.\033[0m\n'
         printf '  UI medMonitor:   http://%s:%s\n' "${IP:-localhost}" "$UI_PORT"
-        printf '  UI zigbee2mqtt:  http://localhost:%s (solo dal server, per diagnosi)\n' "$Z2M_FRONTEND_PORT"
+        printf '  UI zigbee2mqtt:  http://localhost:%s (solo dal server; dal PC: ssh -L %s:localhost:%s utente@server)\n' "$Z2M_FRONTEND_PORT" "$Z2M_FRONTEND_PORT" "$Z2M_FRONTEND_PORT"
         printf '  Log:             journalctl --user -u medmonitor -f\n\n'
         exit 0
     fi

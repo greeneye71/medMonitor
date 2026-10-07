@@ -1,6 +1,7 @@
 """Move samples older than retention to monthly CSV files (data/archive/AAAA-MM.csv)."""
 import csv
 import os
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -8,10 +9,23 @@ from app import settings
 from app.db import LOCAL_TZ, Database, iso, parse
 
 HEADER = ["timestamp", "sensor_id", "sensor_name", "temp_c", "battery"]
+# Serializes the nightly job and the "archivia ora" button: the second run waits and
+# finds nothing left to move, so rows are never appended twice.
+_lock = threading.Lock()
+
+
+def csv_text(value: str) -> str:
+    """Neutralize spreadsheet formulas (=, +, -, @) in free-text CSV cells."""
+    return "'" + value if value[:1] in ("=", "+", "-", "@") else value
 
 
 def archive_old(db: Database, archive_dir: str | Path, now: datetime) -> int:
     """Append old samples to CSV (fsync), then delete them from the DB. Returns rows moved."""
+    with _lock:
+        return _archive_old(db, archive_dir, now)
+
+
+def _archive_old(db: Database, archive_dir: str | Path, now: datetime) -> int:
     days = int(settings.get(db, "archive")["retention_days"])
     cutoff = iso(now - timedelta(days=days))
     rows = db.query(
@@ -27,7 +41,7 @@ def archive_old(db: Database, archive_dir: str | Path, now: datetime) -> int:
     for r in rows:
         ts = parse(r["ts"]).astimezone(LOCAL_TZ)
         by_month.setdefault(ts.strftime("%Y-%m"), []).append(
-            [ts.isoformat(), r["sensor_id"], r["name"], r["temp_c"],
+            [ts.isoformat(), r["sensor_id"], csv_text(r["name"]), r["temp_c"],
              "" if r["battery"] is None else r["battery"]])
 
     for month, lines in by_month.items():

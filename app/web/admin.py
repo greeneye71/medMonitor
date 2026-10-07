@@ -21,7 +21,13 @@ TABS = [("sensori", "Sensori"), ("email", "Email"), ("gateway", "Gateway"),
         ("allarmi", "Allarmi"), ("archivio", "Archivio"), ("sicurezza", "Password")]
 MUTE_HOURS = (1, 4, 24)
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+NAME_MAX = 60
 IP_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
+
+
+def _clean_name(value: str) -> str:
+    """Sensor name without control characters (they would break email headers)."""
+    return " ".join("".join(c if c.isprintable() else " " for c in value).split())[:NAME_MAX]
 
 
 def _back(tab: str) -> RedirectResponse:
@@ -113,7 +119,7 @@ def pair(request: Request):
 def add_sensor(request: Request, ieee: str = Form(...), name: str = Form(""),
                kind: str = Form("fridge"), min_c: str = Form(""), max_c: str = Form("")):
     db = request.app.state.db
-    name, kind = name.strip(), kind if kind in KIND_LABEL else "fridge"
+    name, kind = _clean_name(name), kind if kind in KIND_LABEL else "fridge"
     found = db.one("SELECT * FROM discovered WHERE ieee=?", (ieee,))
     if not found:
         flash(request, "Sensore non trovato tra quelli rilevati.", "alarm")
@@ -140,19 +146,20 @@ def add_sensor(request: Request, ieee: str = Form(...), name: str = Form(""),
 def edit_sensor(request: Request, ieee: str, name: str = Form(""), kind: str = Form("fridge"),
                 min_c: str = Form(""), max_c: str = Form("")):
     db = request.app.state.db
+    name = _clean_name(name)
     sensor = db.one("SELECT * FROM sensors WHERE ieee=? AND active=1", (ieee,))
     th = _thresholds(min_c, max_c)
     if not sensor:
         flash(request, "Sensore non trovato.", "alarm")
-    elif isinstance(th, str) or not name.strip():
+    elif isinstance(th, str) or not name:
         flash(request, th if isinstance(th, str) else "Il nome non può essere vuoto.", "alarm")
     else:
         kind = kind if kind in KIND_LABEL else sensor["kind"]
         db.execute("UPDATE sensors SET name=?, kind=?, min_c=?, max_c=? WHERE ieee=?",
-                   (name.strip(), kind, th[0], th[1], ieee))
+                   (name, kind, th[0], th[1], ieee))
         db.add_event(utcnow(), ieee, "CONFIG",
-                     f"Sensore «{name.strip()}»: soglie {th[0]} … {th[1]} °C")
-        flash(request, f"Sensore «{name.strip()}» salvato.")
+                     f"Sensore «{name}»: soglie {th[0]} … {th[1]} °C")
+        flash(request, f"Sensore «{name}» salvato.")
     return _back("sensori")
 
 
@@ -204,7 +211,7 @@ def email_page(request: Request):
 @router.post("/email")
 def email_save(request: Request, host: str = Form(""), port: str = Form("587"),
                security: str = Form("starttls"), user: str = Form(""),
-               password: str = Form(""), sender: str = Form("")):
+               password: str = Form(""), sender: str = Form(""), clear_password: str = Form("")):
     db = request.app.state.db
     smtp = settings.get(db, "smtp")
     port_n = _int(port, 1, 65535)
@@ -214,7 +221,9 @@ def email_save(request: Request, host: str = Form(""), port: str = Form("587"),
     smtp.update(host=host.strip(), port=port_n,
                 security=security if security in ("starttls", "ssl", "none") else "starttls",
                 user=user.strip(), sender=sender.strip())
-    if password:
+    if clear_password:
+        smtp["password"] = ""
+    elif password:
         smtp["password"] = password
     settings.set(db, "smtp", smtp)
     db.add_event(utcnow(), None, "CONFIG", f"Server email: {smtp['host']}:{smtp['port']}")

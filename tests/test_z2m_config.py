@@ -52,3 +52,13 @@ def test_connection():
     assert z2m_config.test_connection("127.0.0.1", port)
     srv.close()
     assert not z2m_config.test_connection("127.0.0.1", port, timeout=0.5)
+
+
+def test_read_malformed(tmp_path):
+    p = tmp_path / "c.yaml"
+    for text in ("serial: [unclosed\n  : :", "- a\n- b\n", "serial: tcp://x\nadvanced: 5\n",
+                 "advanced:\n  channel: abc\n"):
+        p.write_text(text, encoding="utf-8")
+        assert z2m_config.read_gateway(p)["port"] == 6638
+    z2m_config.write_gateway(p, "192.168.1.9", 6638, "ember", 15)
+    assert z2m_config.read_gateway(p)["channel"] == 15

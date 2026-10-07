@@ -45,3 +45,12 @@ def test_nothing_to_archive(db, tmp_path):
     assert archive.archive_old(db, tmp_path / "a", NOW) == 0
     assert archive.list_archives(tmp_path / "a") == []
     assert db.query("SELECT * FROM events") == []
+
+
+def test_formula_names_escaped(db, tmp_path):
+    add_sensor(db, name="=cmd|' /C calc'!A0")
+    sample(db, datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc))
+    archive.archive_old(db, tmp_path, NOW)
+    with open(tmp_path / "2026-03.csv", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    assert rows[1][2] == "'=cmd|' /C calc'!A0"

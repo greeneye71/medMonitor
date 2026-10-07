@@ -39,7 +39,8 @@
         </select>
       </div>
       <div><label for="user">Utente</label><input id="user" name="user" value="{{ smtp.user }}" autocomplete="off"></div>
-      <div><label for="password">Password<span class="hint">{{ "Lascia vuoto per non cambiarla" if smtp.password else "Non impostata" }}</span></label><input type="password" id="password" name="password" autocomplete="new-password"></div>
+      <div><label for="password">Password<span class="hint">{{ "Lascia vuoto per non cambiarla" if smtp.password else "Non impostata" }}</span></label><input type="password" id="password" name="password" autocomplete="new-password">
+        {% if smtp.password %}<label class="check small"><input type="checkbox" name="clear_password" value="1"> Cancella la password salvata</label>{% endif %}</div>
       <div class="wide"><label for="sender">Mittente<span class="hint">Indirizzo che compare come mittente, di solito uguale all'utente</span></label><input id="sender" name="sender" value="{{ smtp.sender }}"></div>
     </div>
     <div class="actions"><button class="btn" type="submit">Salva server</button></div>

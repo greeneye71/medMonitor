@@ -10,7 +10,6 @@
   </dl>
   <div class="actions">
     <form method="post" action="/impostazioni/gateway/prova" class="inline"><button class="btn btn-ghost" type="submit">Prova connessione</button></form>
-    <a class="btn btn-ghost" href="{{ frontend_url }}" target="_blank" rel="noopener">Apri zigbee2mqtt</a>
   </div>
 </section>
 
@@ -31,5 +30,6 @@
     </div>
     <div class="actions"><button class="btn" type="submit">Salva e riavvia</button></div>
   </form>
+  <p class="small muted">L'interfaccia di zigbee2mqtt (diagnosi) è raggiungibile solo dal server. Dal tuo PC: <code>ssh -L 8080:localhost:8080 utente@server</code>, poi apri <code>http://localhost:8080</code>.</p>
 </section>
 {% endblock %}

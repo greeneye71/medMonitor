@@ -81,3 +81,42 @@ def test_discovered_sensor_can_be_added(admin, app):
                data={"ieee": "0xaa", "name": "Frigo vaccini", "kind": "fridge", "min_c": "2", "max_c": "8"})
     s = app.state.db.one("SELECT name, active FROM sensors WHERE ieee='0xaa'")
     assert (s["name"], s["active"]) == ("Frigo vaccini", 1)
+
+
+def test_csv_export_non_ascii_name_and_formula(client, app):
+    from datetime import timedelta
+
+    from app.db import iso, utcnow
+    db = app.state.db
+    add_sensor(db, name="=Frigo “A” €")
+    db.execute("INSERT INTO samples(sensor_id,ts,temp_c,battery) VALUES('0x01',?,4.2,80)",
+               (iso(utcnow() - timedelta(minutes=10)),))
+    r = client.get("/storico.csv?sensor=0x01")
+    assert r.status_code == 200
+    disp = r.headers["content-disposition"]
+    assert disp.isascii() and "storico_Frigo_A_" in disp
+    assert ";'=Frigo “A” €;4,2;80" in r.text
+
+
+def test_edit_strips_control_chars(admin, app):
+    add_sensor(app.state.db)
+    admin.post("/impostazioni/sensori/0x01/modifica",
+               data={"name": " Frigo\r\n\tuno\x00 ", "kind": "fridge", "min_c": "2", "max_c": "8"})
+    assert app.state.db.one("SELECT name FROM sensors")["name"] == "Frigo uno"
+
+
+def test_clear_smtp_password(admin, app):
+    from app import settings
+    db = app.state.db
+    form = {"host": "smtp.x.it", "port": "587", "security": "starttls", "user": "u", "sender": "a@x.it"}
+    admin.post("/impostazioni/email", data={**form, "password": "segreta"})
+    assert settings.get(db, "smtp")["password"] == "segreta"
+    admin.post("/impostazioni/email", data=form)                          # empty: keep
+    assert settings.get(db, "smtp")["password"] == "segreta"
+    admin.post("/impostazioni/email", data={**form, "clear_password": "1"})
+    assert settings.get(db, "smtp")["password"] == ""
+
+
+def test_gateway_page_with_malformed_yaml(admin, tmp_path):
+    (tmp_path / "configuration.yaml").write_text("serial: [unclosed\n  : :", encoding="utf-8")
+    assert admin.get("/impostazioni/gateway").status_code == 200

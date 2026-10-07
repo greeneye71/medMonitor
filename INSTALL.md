@@ -13,7 +13,7 @@ Tre container gestiti da systemd (utente, non root) tramite Quadlet, su una rete
 | Servizio | Cosa fa | Porta sull'host |
 |---|---|---|
 | `mosquitto` | broker MQTT interno | nessuna |
-| `zigbee2mqtt` | parla con il gateway Zigbee via rete (TCP 6638) | 8080 (diagnosi, solo dal server) |
+| `zigbee2mqtt` | parla con il gateway Zigbee via rete (TCP 6638) | 8080 (diagnosi, solo `127.0.0.1`: da fuori via tunnel ssh) |
 | `medmonitor` | campionamento, allarmi email, UI web | quella scelta (default **8090**) |
 
 Dati persistenti in `~/medmonitor-data/`:
