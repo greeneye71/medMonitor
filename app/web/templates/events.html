@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Eventi{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Eventi</h1>
+    <p class="muted">Allarmi, ripristini e modifiche alla configurazione, dal più recente.</p>
+  </div>
+</div>
+
+<form class="panel" method="get" action="/eventi">
+  <div class="row">
+    <div class="grow">
+      <label for="sensor">Sensore</label>
+      <select id="sensor" name="sensor">
+        <option value="">Tutti</option>
+        {% for s in sensors %}<option value="{{ s.ieee }}" {% if s.ieee == sensor %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="grow">
+      <label for="type">Tipo</label>
+      <select id="type" name="type">
+        <option value="">Tutti</option>
+        {% for key, label in EVENT_LABEL.items() %}<option value="{{ key }}" {% if key == type %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-ghost" type="submit">Filtra</button>
+  </div>
+</form>
+
+{% if rows %}
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Quando</th><th>Evento</th><th>Sensore</th><th>Dettaglio</th></tr></thead>
+    <tbody>
+      {% for e in rows %}
+      <tr>
+        <td class="when">{{ e.ts | local }}</td>
+        <td><span class="tone tone-{{ EVENT_TONE.get(e.type, 'none') }}">{{ EVENT_LABEL.get(e.type, e.type) }}</span></td>
+        <td>{{ e.sensor_name or ("—" if not e.sensor_id else e.sensor_id) }}</td>
+        <td>{{ e.message }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="pager">
+  <span class="small muted">{{ total }} eventi · pagina {{ page }} di {{ pages }}</span>
+  {% if page > 1 %}<a class="btn btn-ghost btn-small" href="?sensor={{ sensor | urlencode }}&type={{ type }}&page={{ page - 1 }}">Più recenti</a>{% endif %}
+  {% if page < pages %}<a class="btn btn-ghost btn-small" href="?sensor={{ sensor | urlencode }}&type={{ type }}&page={{ page + 1 }}">Meno recenti</a>{% endif %}
+</div>
+{% else %}
+<div class="empty"><p>Nessun evento{% if sensor or type %} con questi filtri{% endif %}.</p></div>
+{% endif %}
+{% endblock %}

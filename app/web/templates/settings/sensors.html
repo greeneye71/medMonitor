@@ -1,0 +1,44 @@
+{% extends "settings/_layout.html" %}
+{% block settings %}
+<section class="panel">
+  <div class="panel-head"><h2>Aggiungi sensore</h2></div>
+  {% include "settings/_discovered.html" %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Sensori attivi</h2>
+    <span class="small muted">{{ sensors | length }} in monitoraggio</span>
+  </div>
+  {% for s in sensors %}
+  <div class="sensor-row">
+    <p class="meta">{{ s.ieee }} · ultima lettura {{ s.last_seen_at | ago(now) }}{% if s.last_battery is not none %} · batteria {{ s.last_battery }}%{% endif %}{% if s.muted_until %} · email in pausa fino al {{ s.muted_until | local }}{% endif %}</p>
+    <form method="post" action="/impostazioni/sensori/{{ s.ieee | urlencode }}/modifica">
+      <div class="grid">
+        <div><label for="n-{{ s.ieee }}">Nome</label><input id="n-{{ s.ieee }}" name="name" required value="{{ s.name }}"></div>
+        <div><label for="k-{{ s.ieee }}">Tipo</label>{% with id="k-" ~ s.ieee, selected=s.kind %}{% include "settings/_kind.html" %}{% endwith %}</div>
+        <div><label for="mn-{{ s.ieee }}">Minima °C</label><input id="mn-{{ s.ieee }}" name="min_c" inputmode="decimal" value="{{ s.min_c | num }}" data-role="min"></div>
+        <div><label for="mx-{{ s.ieee }}">Massima °C</label><input id="mx-{{ s.ieee }}" name="max_c" inputmode="decimal" value="{{ s.max_c | num }}" data-role="max"></div>
+        <div><button class="btn btn-ghost" type="submit">Salva</button></div>
+      </div>
+    </form>
+    <div class="sensor-tools">
+      <form method="post" action="/impostazioni/sensori/{{ s.ieee | urlencode }}/silenzia" class="inline">
+        <label class="visually-hidden" for="h-{{ s.ieee }}">Pausa email</label>
+        <select id="h-{{ s.ieee }}" name="hours">
+          {% for h in mute_hours %}<option value="{{ h }}">{{ h }} {{ "ora" if h == 1 else "ore" }}</option>{% endfor %}
+          {% if s.muted_until %}<option value="0">Riattiva subito</option>{% endif %}
+        </select>
+        <button class="btn btn-ghost btn-small" type="submit">{{ "Cambia pausa" if s.muted_until else "Metti in pausa le email" }}</button>
+      </form>
+      <form method="post" action="/impostazioni/sensori/{{ s.ieee | urlencode }}/rimuovi" class="inline"
+            data-confirm="Rimuovere «{{ s.name }}»? Lo storico resta, ma il sensore va riabbinato per tornare in monitoraggio.">
+        <button class="btn btn-danger btn-small" type="submit">Rimuovi</button>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">Nessun sensore attivo. Avvia l'abbinamento qui sopra.</p>
+  {% endfor %}
+</section>
+{% endblock %}

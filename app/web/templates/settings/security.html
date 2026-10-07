@@ -1,0 +1,14 @@
+{% extends "settings/_layout.html" %}
+{% block settings %}
+<section class="panel">
+  <div class="panel-head"><h2>Password di amministrazione</h2></div>
+  <form method="post" action="/impostazioni/sicurezza">
+    <div class="grid">
+      <div><label for="current">Password attuale</label><input type="password" id="current" name="current" required autocomplete="current-password"></div>
+      <div><label for="new">Nuova password<span class="hint">Almeno 6 caratteri</span></label><input type="password" id="new" name="new" required minlength="6" autocomplete="new-password"></div>
+      <div><label for="confirm">Ripeti nuova password</label><input type="password" id="confirm" name="confirm" required minlength="6" autocomplete="new-password"></div>
+    </div>
+    <div class="actions"><button class="btn" type="submit">Cambia password</button></div>
+  </form>
+</section>
+{% endblock %}
