@@ -1,0 +1,53 @@
+{% extends "settings/_layout.html" %}
+{% block settings %}
+{% if failing %}
+<div class="flash flash-alarm" role="alert">{{ failing }} email non riescono a partire{% if last_error %}: {{ last_error.last_error }} ({{ last_error.last_attempt_at | local }}){% endif %}. Controlla il server qui sotto.</div>
+{% elif pending %}
+<div class="flash flash-warn">{{ pending }} email in coda di invio.</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><h2>Destinatari</h2><span class="small muted">Ricevono allarmi, batteria scarica e sensori offline</span></div>
+  <ul class="recipients">
+    {% for r in recipients %}
+    <li><span>{{ r }}</span>
+      <form method="post" action="/impostazioni/email/destinatari/rimuovi" class="inline">
+        <input type="hidden" name="email" value="{{ r }}">
+        <button class="btn btn-ghost btn-small" type="submit">Rimuovi</button>
+      </form>
+    </li>
+    {% else %}
+    <li class="muted">Nessun destinatario: gli allarmi non vengono inviati a nessuno.</li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="/impostazioni/email/destinatari" class="row">
+    <div class="grow"><label for="email">Nuovo indirizzo</label><input type="email" id="email" name="email" required placeholder="nome@esempio.it"></div>
+    <button class="btn" type="submit">Aggiungi destinatario</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Server di posta (SMTP)</h2></div>
+  <form method="post" action="/impostazioni/email">
+    <div class="grid">
+      <div class="wide"><label for="host">Server</label><input id="host" name="host" value="{{ smtp.host }}" placeholder="smtp.esempio.it"></div>
+      <div><label for="port">Porta</label><input id="port" name="port" inputmode="numeric" value="{{ smtp.port }}"></div>
+      <div><label for="security">Sicurezza</label>
+        <select id="security" name="security">
+          {% for v, l in [("starttls", "STARTTLS (porta 587)"), ("ssl", "SSL/TLS (porta 465)"), ("none", "Nessuna (porta 25)")] %}
+          <option value="{{ v }}" {% if smtp.security == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+        </select>
+      </div>
+      <div><label for="user">Utente</label><input id="user" name="user" value="{{ smtp.user }}" autocomplete="off"></div>
+      <div><label for="password">Password<span class="hint">{{ "Lascia vuoto per non cambiarla" if smtp.password else "Non impostata" }}</span></label><input type="password" id="password" name="password" autocomplete="new-password">
+        {% if smtp.password %}<label class="check small"><input type="checkbox" name="clear_password" value="1"> Cancella la password salvata</label>{% endif %}</div>
+      <div class="wide"><label for="sender">Mittente<span class="hint">Indirizzo che compare come mittente, di solito uguale all'utente</span></label><input id="sender" name="sender" value="{{ smtp.sender }}"></div>
+    </div>
+    <div class="actions"><button class="btn" type="submit">Salva server</button></div>
+  </form>
+  <form method="post" action="/impostazioni/email/prova" class="actions">
+    <button class="btn btn-ghost" type="submit">Invia email di prova</button>
+    <span class="small muted">Salva prima le modifiche.</span>
+  </form>
+</section>
+{% endblock %}

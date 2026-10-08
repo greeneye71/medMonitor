@@ -1,0 +1,35 @@
+{% extends "settings/_layout.html" %}
+{% block settings %}
+<section class="panel">
+  <div class="panel-head"><h2>Stato</h2></div>
+  <dl class="kv">
+    <dt>Broker MQTT</dt><dd><span class="tone tone-{{ 'ok' if mqtt and mqtt.connected else 'alarm' }}">{{ "Connesso" if mqtt and mqtt.connected else "Non connesso" }}</span></dd>
+    <dt>zigbee2mqtt</dt><dd><span class="tone tone-{{ 'ok' if mqtt and mqtt.state.online else 'alarm' }}">{{ "In linea" if mqtt and mqtt.state.online else "Non in linea" }}</span>{% if mqtt and mqtt.state.version %} · versione {{ mqtt.state.version }}{% endif %}</dd>
+    <dt>Dispositivi nella rete</dt><dd>{{ devices }}</dd>
+    <dt>Configurazione</dt><dd>{{ "Presente" if config_exists else "Non ancora creata" }}</dd>
+  </dl>
+  <div class="actions">
+    <form method="post" action="/impostazioni/gateway/prova" class="inline"><button class="btn btn-ghost" type="submit">Prova connessione</button></form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Gateway Ethernet</h2></div>
+  <p class="small muted">Indirizzo statico assegnato al gateway (es. SONOFF Dongle-M). Al salvataggio zigbee2mqtt si riavvia.</p>
+  <form method="post" action="/impostazioni/gateway" data-confirm="Salvare e riavviare zigbee2mqtt? Per circa un minuto non arriveranno letture.">
+    <div class="grid">
+      <div><label for="ip">Indirizzo IP</label><input id="ip" name="ip" required value="{{ gw.ip or '' }}" placeholder="192.168.1.50" inputmode="decimal"></div>
+      <div><label for="port">Porta</label><input id="port" name="port" inputmode="numeric" value="{{ gw.port or 6638 }}"></div>
+      <div><label for="adapter">Adapter</label>
+        <select id="adapter" name="adapter">
+          {% for v, l in [("ember", "ember (Dongle-M, Dongle-E)"), ("zstack", "zstack (Texas Instruments)"), ("deconz", "deconz (ConBee)"), ("zigate", "zigate")] %}
+          <option value="{{ v }}" {% if (gw.adapter or 'ember') == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+        </select>
+      </div>
+      <div><label for="channel">Canale<span class="hint">Cambiarlo richiede di riabbinare i sensori</span></label><input id="channel" name="channel" inputmode="numeric" value="{{ gw.channel or 11 }}"></div>
+    </div>
+    <div class="actions"><button class="btn" type="submit">Salva e riavvia</button></div>
+  </form>
+  <p class="small muted">L'interfaccia di zigbee2mqtt (diagnosi) è raggiungibile solo dal server. Dal tuo PC: <code>ssh -L 8080:localhost:8080 utente@server</code>, poi apri <code>http://localhost:8080</code>.</p>
+</section>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Impostazioni{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Impostazioni</h1>
+    <p class="muted">Ogni modifica viene registrata tra gli eventi.</p>
+  </div>
+</div>
+<nav class="tabs" aria-label="Sezioni impostazioni">
+  {% for key, label in tabs %}<a href="/impostazioni/{{ key }}" {% if key == tab %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+</nav>
+{% block settings %}{% endblock %}
+{% endblock %}

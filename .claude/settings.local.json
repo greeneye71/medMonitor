@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(git config:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh label:*)",
+      "Bash(gh issue:*)",
+      "Bash(python -c \"from backend.database.adapter import DatabaseAdapter; print\\(''OK: adapter''\\)\")",
+      "Bash(python -c \"from backend.database.factory import get_adapter; print\\(''OK: factory''\\)\")",
+      "Bash(python -c \"from backend.config import settings; print\\(f''OK: config — backend={settings.database_backend}''\\)\")",
+      "Bash(gh pr:*)",
+      "Bash(python -m pip install --quiet pydantic-settings python-dotenv tinyflux paho-mqtt aiosmtplib jinja2 pytest pytest-asyncio pytest-cov httpx fastapi uvicorn)",
+      "Bash(python -m pytest backend/tests/test_database_adapter.py backend/tests/test_config_service.py backend/tests/test_thresholds.py backend/tests/test_demo_generator.py -v --timeout=30)",
+      "Bash(python -m pytest backend/tests/test_database_adapter.py backend/tests/test_config_service.py backend/tests/test_thresholds.py -v)",
+      "Bash(python -m pytest backend/tests/ -v)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(grep -rn \"from apscheduler\\\\|import apscheduler\\\\|from APScheduler\\\\|import APScheduler\" /w/varie/SV/medMonitor/ --include=*.py)",
+      "Bash(grep -h \"^import\\\\|^from\" /w/varie/SV/medMonitor/backend/**/*.py /w/varie/SV/medMonitor/frontend/**/*.py /w/varie/SV/medMonitor/crea_doc.py)",
+      "Bash(/tmp/check_imports.txt:*)",
+      "Read(//tmp/**)",
+      "Bash(rm /tmp/check_imports.txt)",
+      "Bash(grep:*)",
+      "Bash(python:*)",
+      "Bash(venv/Scripts/python -c \":*)",
+      "Bash(python3 -m py_compile backend/paths.py backend/config.py backend/models/config_model.py backend/models/alert.py backend/services/config_service.py backend/services/mqtt_client.py backend/services/alert_service.py backend/services/imap_service.py backend/services/demo_generator.py backend/database/adapter.py backend/database/tinyflux_adapter.py backend/database/timescale_adapter.py backend/routers/alerts.py backend/routers/sensors.py backend/main.py)",
+      "Bash(where py:*)",
+      "Bash(where python:*)",
+      "Bash(py -m py_compile backend/paths.py backend/config.py backend/models/config_model.py backend/models/alert.py backend/services/config_service.py backend/services/mqtt_client.py backend/services/alert_service.py backend/services/imap_service.py backend/services/demo_generator.py backend/database/adapter.py backend/database/tinyflux_adapter.py backend/database/timescale_adapter.py backend/routers/alerts.py backend/routers/sensors.py backend/main.py)"
+    ]
+  }
+}

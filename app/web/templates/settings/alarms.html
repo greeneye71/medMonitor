@@ -1,0 +1,23 @@
+{% extends "settings/_layout.html" %}
+{% block settings %}
+<form method="post" action="/impostazioni/allarmi">
+  <section class="panel">
+    <div class="panel-head"><h2>Quando inviare email</h2></div>
+    <div class="grid">
+      <div><label for="cs">Campioni fuori soglia<span class="hint">Consecutivi, uno ogni 10 minuti (1–12)</span></label><input id="cs" name="consecutive_samples" inputmode="numeric" value="{{ alarm.consecutive_samples }}"></div>
+      <div><label for="off">Sensore offline dopo<span class="hint">Minuti senza letture (20–1440)</span></label><input id="off" name="offline_minutes" inputmode="numeric" value="{{ alarm.offline_minutes }}"></div>
+      <div><label for="bat">Batteria scarica sotto<span class="hint">Percentuale (5–50)</span></label><input id="bat" name="battery_percent" inputmode="numeric" value="{{ alarm.battery_percent }}"></div>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Soglie proposte per i nuovi sensori</h2><span class="small muted">Non cambiano i sensori già aggiunti</span></div>
+    <div class="grid">
+      <div><label for="fmn">Frigorifero, minima °C</label><input id="fmn" name="fridge_min" inputmode="decimal" value="{{ presets.fridge.min | num }}"></div>
+      <div><label for="fmx">Frigorifero, massima °C</label><input id="fmx" name="fridge_max" inputmode="decimal" value="{{ presets.fridge.max | num }}"></div>
+      <div><label for="zmn">Congelatore, minima °C</label><input id="zmn" name="freezer_min" inputmode="decimal" value="{{ presets.freezer.min | num }}"></div>
+      <div><label for="zmx">Congelatore, massima °C</label><input id="zmx" name="freezer_max" inputmode="decimal" value="{{ presets.freezer.max | num }}"></div>
+    </div>
+    <div class="actions"><button class="btn" type="submit">Salva regole</button></div>
+  </section>
+</form>
+{% endblock %}

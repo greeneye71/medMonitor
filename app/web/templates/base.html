@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}medMonitor{% endblock %} · medMonitor</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M14 14.8V4a2 2 0 1 0-4 0v10.8a4 4 0 1 0 4 0Z"/><path d="M12 9v7"/>
+        </svg>
+        medMonitor
+      </a>
+      <nav class="nav" aria-label="Sezioni">
+        {% set sections = [("/", "Panoramica"), ("/storico", "Storico"), ("/eventi", "Eventi"), ("/impostazioni", "Impostazioni")] %}
+        {% for href, label in sections %}
+          <a href="{{ href }}" {% if (href == "/" and path == "/") or (href != "/" and path.startswith(href)) %}aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </nav>
+      {% if is_admin %}
+      <form method="post" action="/logout"><button class="btn btn-ghost btn-small" type="submit">Esci</button></form>
+      {% endif %}
+    </div>
+  </header>
+  {% block band %}{% endblock %}
+  <main>
+    <div class="wrap">
+      {% if flash %}<div class="flash flash-{{ flash.tone }}" role="status">{{ flash.message }}</div>{% endif %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

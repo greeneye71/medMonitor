@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Accesso{% endblock %}
+{% block content %}
+<form class="panel login" method="post" action="/login">
+  <h1>Impostazioni</h1>
+  <p class="muted">Inserisci la password di amministrazione per modificare sensori, email e gateway.</p>
+  <input type="hidden" name="next" value="{{ next }}">
+  <label for="password">Password</label>
+  <input type="password" id="password" name="password" autocomplete="current-password" autofocus required>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <div class="actions"><button class="btn" type="submit">Accedi</button></div>
+</form>
+{% endblock %}

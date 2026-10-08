@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Storico{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Storico</h1>
+    <p class="muted">Temperature registrate ogni 10 minuti.</p>
+  </div>
+</div>
+
+{% if not sensor %}
+<div class="empty">
+  <h2>Nessun sensore da mostrare</h2>
+  <p>Lo storico compare dopo aver aggiunto almeno un sensore.</p>
+  <a class="btn" href="/impostazioni/sensori">Aggiungi un sensore</a>
+</div>
+{% else %}
+<form class="panel" method="get" action="/storico">
+  <div class="row">
+    <div class="grow">
+      <label for="sensor">Sensore</label>
+      <select id="sensor" name="sensor" data-autosubmit>
+        {% for s in sensors %}<option value="{{ s.ieee }}" {% if s.ieee == sensor.ieee %}selected{% endif %}>{{ s.name }}{% if not s.active %} (rimosso){% endif %}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <span class="label-like small muted">Periodo</span><br>
+      <div class="segmented" role="group" aria-label="Periodo">
+        {% for key, (label, _) in periods.items() %}
+        <a href="/storico?sensor={{ sensor.ieee | urlencode }}&period={{ key }}" {% if period == key %}aria-current="true"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </div>
+    </div>
+    <input type="hidden" name="period" value="custom">
+    <div><label for="from">Dal</label><input type="date" id="from" name="from" value="{{ from_value }}"></div>
+    <div><label for="to">Al</label><input type="date" id="to" name="to" value="{{ to_value }}"></div>
+    <button class="btn btn-ghost" type="submit">Mostra</button>
+    <a class="btn btn-ghost" href="/storico.csv?{{ csv_query or ('sensor=' ~ (sensor.ieee | urlencode)) }}">Scarica CSV</a>
+  </div>
+</form>
+
+{% if stats %}
+<dl class="stats">
+  <div><dt>Minima</dt><dd>{{ stats.min | num }} °C</dd></div>
+  <div><dt>Massima</dt><dd>{{ stats.max | num }} °C</dd></div>
+  <div><dt>Media</dt><dd>{{ stats.mean | num }} °C</dd></div>
+  <div><dt>Nei limiti</dt><dd>{{ stats.in_range | num(0) }}%</dd></div>
+  <div><dt>Campioni</dt><dd>{{ stats.count }}</dd></div>
+</dl>
+<div class="panel">
+  <div class="panel-head">
+    <h2>{{ sensor.name }}</h2>
+    <span class="small muted">Limiti {{ sensor.min_c | num }} … {{ sensor.max_c | num }} °C · dal {{ start | local }} al {{ end | local }}</span>
+  </div>
+  <div id="chart" class="chart" role="img" aria-label="Grafico temperature di {{ sensor.name }}"></div>
+  <script type="application/json" id="chart-data">{{ chart | tojson }}</script>
+</div>
+{% else %}
+<div class="empty"><p>Nessun campione per {{ sensor.name }} nel periodo scelto.</p></div>
+{% endif %}
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if stats %}<script src="/static/vendor/echarts.min.js"></script>{% endif %}{% endblock %}

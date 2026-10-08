@@ -1,0 +1,6 @@
+{# Kind select; options carry preset thresholds so app.js can fill min/max on change. #}
+<select id="{{ id }}" name="kind" data-preset-target>
+  {% for key, label in KIND_LABEL.items() %}
+  <option value="{{ key }}" data-min="{{ presets[key].min | num }}" data-max="{{ presets[key].max | num }}" {% if key == selected %}selected{% endif %}>{{ label }}</option>
+  {% endfor %}
+</select>

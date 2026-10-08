@@ -1,59 +1,58 @@
 # medMonitor
 
-Sistema di monitoraggio temperatura per celle frigorifere e freezer,
-con dashboard web professionale e notifiche email automatiche.
+Monitoraggio delle temperature di frigoriferi e congelatori (farmaci, vaccini, campioni)
+con sensori Zigbee e allarmi via email. Gira su una VM Fedora con Podman rootless.
 
-## Caratteristiche principali
+## Cosa fa
 
-- Acquisizione dati da sensori ZigBee tramite gateway Wi-Fi/Ethernet
-- Logging ogni 10 minuti (TinyFlux o PostgreSQL + TimescaleDB)
-- Dashboard Plotly Dash professionale (tema dark/light)
-- Soglie configurabili individualmente per ogni sensore
-- Sistema di allarme email WARNING / CRITICAL con supporto IMAP/SMTP
-- Modalità demo con 6 scenari simulati realistici
-- Deploy: Windows nativo o Docker Compose
+- Legge un campione ogni 10 minuti da ogni sensore Zigbee (SONOFF SNZB-02LD).
+- Manda un'email quando un sensore resta fuori soglia per N campioni consecutivi
+  (default 2), quando torna in soglia, quando va offline e quando ha la batteria scarica.
+- Soglie min/max impostabili per ogni sensore, con valori proposti per frigorifero e congelatore.
+- Storico con grafico ed esportazione CSV; i campioni vecchi vengono archiviati
+  ogni notte in file CSV mensili.
+- Impostazioni protette da password: sensori, email (SMTP e destinatari), gateway, allarmi, archivio.
+- Gateway SONOFF Dongle-M collegato via Ethernet con IP statico (nessuna chiavetta USB).
 
-## Stack tecnologico
+## Architettura
 
-| Layer | Tecnologia |
+```
+SNZB-02LD ─Zigbee─▶ Dongle-M ─TCP 6638─▶ zigbee2mqtt ─▶ mosquitto ─▶ medmonitor ─▶ SQLite + CSV
+                                                                         │
+                                                                         ├─▶ UI web (porta scelta, default 8090)
+                                                                         └─▶ email SMTP
+```
+
+Tre container gestiti da systemd tramite Quadlet: `mosquitto`, `zigbee2mqtt`, `medmonitor`.
+
+| Componente | Tecnologia |
 |---|---|
-| Backend | Python 3.11, FastAPI, APScheduler, Paho-MQTT |
-| Database | TinyFlux (default) → TimescaleDB (scalabile) |
-| Frontend | Plotly Dash + Dash Bootstrap Components |
-| Hardware | Gateway ZigBee Wi-Fi (Sonoff ZBBridge Pro) |
-| Email | SMTP (invio) + IMAP (ricezione/conferme) |
-| Deploy | Windows nativo / Docker Compose |
+| Applicazione | Python 3.12, FastAPI, APScheduler, paho-mqtt, aiosmtplib |
+| UI | Jinja2 + HTMX + ECharts, server-rendered, nessuna CDN |
+| Dati | SQLite (`medmonitor.db`) + archivio CSV mensile |
+| Deploy | Podman rootless + Quadlet su Fedora |
 
-## Avvio rapido
+## Installazione
 
-### Windows nativo (senza Docker)
-```powershell
-gh repo clone greeneye71/medMonitor
-cd medMonitor
-copy .env.example .env
-# Modifica .env con le tue impostazioni
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+Vedi **[INSTALL.md](INSTALL.md)**. In breve, sulla VM Fedora:
 
-# Terminale 1: Backend
-uvicorn backend.main:app --reload --port 8000
-
-# Terminale 2: Frontend
-python frontend/app.py
+```bash
+git clone https://github.com/greeneye71/medMonitor.git ~/medmonitor
+cd ~/medmonitor && ./install.sh
 ```
 
-### Docker Compose
-```powershell
-gh repo clone greeneye71/medMonitor
-cd medMonitor
-copy .env.example .env
-docker compose up -d
+Hardware consigliato e requisiti della VM: [HARDWARE.md](HARDWARE.md).
+
+## Sviluppo
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt        # Windows: .venv\Scripts\pip
+.venv/bin/python -m pytest -q
+DATA_DIR=data .venv/bin/uvicorn app.main:create_app --factory --port 8090
 ```
 
-Dashboard: http://localhost:8050
-API docs:  http://localhost:8000/docs
+Senza broker MQTT l'app parte comunque e mostra il gateway offline.
+Password iniziale delle impostazioni: variabile `ADMIN_PASSWORD` (default `admin`).
 
-## Modello AI
-
-Sviluppato con **claude-opus-4-6** tramite Claude Code.
+La versione 1 (Plotly Dash, TinyFlux/TimescaleDB, Windows) è documentata in `docs/old/`.

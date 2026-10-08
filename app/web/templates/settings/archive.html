@@ -1,0 +1,28 @@
+{% extends "settings/_layout.html" %}
+{% block settings %}
+<section class="panel">
+  <div class="panel-head"><h2>Database</h2></div>
+  <dl class="kv">
+    <dt>Dimensione</dt><dd>{{ db_size | size }}</dd>
+    <dt>Campioni presenti</dt><dd>{{ oldest.n }}{% if oldest.ts %} dal {{ oldest.ts | local("%d/%m/%Y") }}{% endif %}</dd>
+  </dl>
+  <form method="post" action="/impostazioni/archivio" class="row mt">
+    <div><label for="days">Giorni nel database<span class="hint">I campioni più vecchi passano ogni notte nei file CSV mensili (7–3650)</span></label><input id="days" name="retention_days" inputmode="numeric" value="{{ retention }}"></div>
+    <button class="btn" type="submit">Salva</button>
+  </form>
+  <form method="post" action="/impostazioni/archivio/ora" class="actions">
+    <button class="btn btn-ghost" type="submit">Archivia adesso</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>File archiviati</h2></div>
+  {% if files %}
+  <ul class="recipients">
+    {% for f in files %}<li><span>{{ f.name }} <span class="small muted">{{ f.size | size }}</span></span><a class="btn btn-ghost btn-small" href="/impostazioni/archivio/{{ f.name }}">Scarica</a></li>{% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">Nessun file ancora: i campioni sono tutti nel database.</p>
+  {% endif %}
+</section>
+{% endblock %}

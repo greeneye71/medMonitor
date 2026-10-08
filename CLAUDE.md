@@ -1,98 +1,57 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
-## Project Overview
+## Project
 
-**medMonitor** is a ZigBee temperature monitoring system for refrigerated storage (fridges/freezers) with automated email alerts. This is a specification-driven project — documentation files define the full system architecture and implementation plan.
+**medMonitor v2**: temperature monitoring for fridges/freezers with Zigbee sensors and
+email alerts. Runs on a Fedora VM with Podman rootless + Quadlet. Keep things simple:
+one Python app, SQLite, no frontend build step. UI and docs are in Italian.
 
-## Tech Stack
-
-- **Backend:** Python 3.11, FastAPI, APScheduler, Paho-MQTT
-- **Database:** TinyFlux (dev/small) or PostgreSQL + TimescaleDB (production)
-- **Frontend:** Plotly Dash, Dash Bootstrap Components, Dash-AG-Grid
-- **Alerts:** aiosmtplib (SMTP) + aioimaplib (IMAP) + Jinja2 HTML templates
-- **Deployment:** Windows nativo / Docker Compose
-
-## Build & Run Commands
-
-```bash
-# === Windows nativo ===
-# Setup ambiente
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-
-# Backend dev server
-uvicorn backend.main:app --reload --port 8000
-
-# Frontend dev server (terminale separato)
-python frontend/app.py
-
-# Mosquitto: installa come servizio Windows da https://mosquitto.org/download/
-
-# === Docker Compose ===
-docker compose up -d
-docker compose --profile timescale up -d   # con TimescaleDB
-
-# === Test ===
-pytest backend/tests/ -v --cov=backend
-pytest backend/tests/test_api.py -v
-```
-
-**Ports:** MQTT 1883, Backend/API 8000 (/docs for Swagger), Frontend 8050
+Design spec: `docs/superpowers/specs/2026-10-08-fedora-v2-design.md`.
+Installation guide (also meant to be followed by Claude Code on the server): `INSTALL.md`.
+v1 docs (Dash, TinyFlux/TimescaleDB, Windows) are obsolete and live in `docs/old/`.
 
 ## Architecture
 
 ```
-ZigBee Sensors → Gateway → MQTT Broker → FastAPI Backend
-  → DatabaseAdapter (TinyFlux or TimescaleDB) → Plotly Dash Frontend
+SNZB-02LD → SONOFF Dongle-M (Ethernet, tcp://IP:6638, adapter ember)
+  → zigbee2mqtt → mosquitto → medmonitor (FastAPI) → SQLite + monthly CSV archive
 ```
 
-### Key Design Patterns
+- `app/main.py` — `create_app(data_dir, start_services, z2m_path)` factory; scheduler jobs:
+  sampling cron `*/10`, email outbox every minute, archive daily 03:00, VACUUM Sunday 03:30.
+- `app/mqtt.py` — subscribes `zigbee2mqtt/+` and `zigbee2mqtt/bridge/{devices,state,info}`, stores last reading per sensor, pairing (permit_join), discovered devices.
+- `app/monitor.py` — sampling + alarm rules (N consecutive out-of-range, offline, low battery).
+- `app/notifier.py` — email outbox, SMTP via aiosmtplib, retries; failures logged as `EMAIL_ERROR` events.
+- `app/archive.py` — moves samples older than retention to `archive/YYYY-MM.csv`.
+- `app/settings.py` — settings stored as JSON in SQLite (`alarm`, `archive`, `smtp`, …) with defaults.
+- `app/z2m_config.py` — reads/writes gateway IP and channel in zigbee2mqtt `configuration.yaml`.
+- `app/web/` — Jinja2 + HTMX + ECharts (vendored, no CDN). Public: Panoramica, Storico, Eventi.
+  Password-protected: Impostazioni (Sensori, Email, Gateway, Allarmi, Archivio, Sicurezza).
 
-- **Database Abstraction Layer:** Abstract `DatabaseAdapter` with TinyFlux and TimescaleDB implementations. Factory pattern via `get_adapter(settings)` based on `DATABASE_BACKEND` env var. Both adapters share the same interface — all tests must pass against both.
-- **Threshold Resolution:** Hierarchical — zone defaults → sensor-specific overrides. `ThresholdsConfig.resolve(sensor_id)` returns effective `(min, max)`.
-- **Configuration Hierarchy:** Hardcoded defaults (config.py) < `.env` file < `data/config.json` (UI modifications, hot reloaded).
-- **Alert Service:** APScheduler checks every 60s. Two levels: WARNING (0-15 min out of range), CRITICAL (>15 min). Cooldown default 30 min. SMTP for sending, IMAP for operator confirmations (ACK, MUTE, ESCALATE).
-- **MQTT Client:** Paho-MQTT subscribing to `zigbee2mqtt/#` with exponential backoff reconnect (1s → max 60s).
+Environment: `DATA_DIR` (default `data`), `ADMIN_PASSWORD` (only sets the initial hash),
+`MQTT_HOST`, `MQTT_PORT`, `Z2M_CONFIG`, `SECRET_KEY`, `UI_PORT` (container only).
 
-### Frontend Pages (Italian UI)
+## Commands
 
-1. **Dashboard** — Real-time gauges, zone cards, 24h history
-2. **Storico** — Date range history, CSV export, statistics
-3. **Allarmi** — AG Grid alert table with filtering
-4. **Impostazioni** — Settings (7 tabs: General, Thresholds, Sensors, Email, Database, System, Demo)
+```bash
+# Local tests (Windows dev machine)
+.venv2/Scripts/python -m pytest -q
 
-**Design system:** SLATE theme (dark), semantic colors: OK `#1D9E75`, WARNING `#BA7517`, CRITICAL `#E24B4A`.
+# Local run
+DATA_DIR=data .venv2/Scripts/uvicorn app.main:create_app --factory --port 8090
 
-## Implementation Phases
-
-The project follows 11 phases defined in `CLAUDE_PROMPTS.md`, each with a dedicated git branch. Commit messages use prefixes: `[feat]`, `[fix]`, `[docs]`, `[test]`, `[refactor]`.
-
-## Specification Documents
-
-- `ARCHITECTURE.md` — System diagram and data flow
-- `API.md` — Complete REST API specification
-- `DATABASE_ADAPTER.md` — Adapter pattern and migration strategy
-- `CONFIGURATION.md` — Config hierarchy and environment variables
-- `ALERTS.md` — Alert logic and email templates
-- `UI_DESIGN.md` — Frontend design system and component specs
-- `DEMO_MODE.md` — 6 demo scenarios with physical simulation model
-- `HARDWARE.md` — Gateway and sensor recommendations
-- `INSTALLATION.md` — Deployment guide
-- `CLAUDE_PROMPTS.md` — 11 implementation prompts (phases)
-- `CLAUDE_SKILLS.md` — 9 AI development skills
-- `CLAUDE_WORKFLOW.md` — Git workflow and branch conventions
-
-## Key Environment Variables
-
+# Server (Fedora): install or update
+./install.sh
+systemctl --user status medmonitor
+journalctl --user -u medmonitor -f
 ```
-DATABASE_BACKEND=tinyflux|timescale
-MQTT_HOST, MQTT_PORT
-ZIGBEE_GATEWAY_IP
-SMTP_HOST, SMTP_PORT, SMTP_USE_TLS, SMTP_USER, SMTP_PASSWORD, ALERT_RECIPIENTS
-IMAP_HOST, IMAP_PORT, IMAP_USE_SSL, IMAP_USER, IMAP_PASSWORD, IMAP_FOLDER
-ALERT_COOLDOWN_MINUTES=30
-POLLING_INTERVAL_MINUTES=10
-```
+
+## Rules
+
+- UI port is chosen at install time, default **8090**. Never use port 8000.
+- Deployment = `Containerfile` + `install.sh` (writes Quadlet units to `~/.config/containers/systemd/`).
+  Data in `~/medmonitor-data/{app,z2m}`, config in `<repo>/.env` (Podman env-file: no inline comments).
+- Security is not a concern (protected VM): SMTP password stored in plain text is fine.
+- Commit prefixes: `[feat]`, `[fix]`, `[docs]`, `[test]`, `[refactor]`. Never commit `.claude/settings.local.json`.
