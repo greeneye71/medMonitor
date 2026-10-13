@@ -4,6 +4,7 @@ import logging
 import math
 import threading
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 
@@ -29,6 +30,30 @@ def _ieee_for(state: BridgeState, name: str) -> str | None:
     if name.startswith("0x"):          # default friendly_name is the ieee address
         return name
     return None
+
+
+def _seen_at(value, now: datetime) -> datetime:
+    """When the sensor really spoke: z2m `last_seen` (ISO_8601 or epoch ms), else `now`.
+
+    z2m republishes its state cache at startup (cache_state_send_on_startup): without this,
+    a sensor silent for days would look online with a stale temperature.
+    """
+    seen = None
+    if isinstance(value, str):
+        try:
+            seen = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    elif isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+        try:
+            seen = datetime.fromtimestamp(value / 1000, timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            pass
+    if seen is None:
+        return now
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=timezone.utc)
+    return min(seen.replace(microsecond=0), now)
 
 
 def handle_message(db: Database, state: BridgeState, topic: str, payload: bytes, now=None) -> None:
@@ -89,18 +114,19 @@ def handle_message(db: Database, state: BridgeState, topic: str, payload: bytes,
     battery = data.get("battery")
     ok = isinstance(battery, (int, float)) and not isinstance(battery, bool) and math.isfinite(battery)
     battery = int(battery) if ok else None
+    seen = iso(_seen_at(data.get("last_seen"), now))
     cur = db.execute(
         "UPDATE sensors SET last_temp=?, last_battery=COALESCE(?, last_battery), last_seen_at=? "
-        "WHERE ieee=? AND active=1", (float(temp), battery, iso(now), ieee))
+        "WHERE ieee=? AND active=1", (float(temp), battery, seen, ieee))
     if cur.rowcount == 0:
         db.execute(
             "INSERT INTO discovered(ieee,friendly_name,model,first_seen,last_temp,last_seen) "
             "VALUES(?,?,?,?,?,?) ON CONFLICT(ieee) DO UPDATE SET last_temp=excluded.last_temp, "
             "last_seen=excluded.last_seen, friendly_name=excluded.friendly_name",
-            (ieee, sub, state.models.get(ieee, ""), iso(now), float(temp), iso(now)))
+            (ieee, sub, state.models.get(ieee, ""), iso(now), float(temp), seen))
     else:
         db.execute("UPDATE discovered SET last_temp=?, last_seen=? WHERE ieee=?",
-                   (float(temp), iso(now), ieee))
+                   (float(temp), seen, ieee))
 
 
 class MqttService:

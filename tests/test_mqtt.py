@@ -105,3 +105,38 @@ def test_discovered_records_last_seen(db):
     msg(db, st, "nuovo", {"temperature": 6.1})
     d = db.one("SELECT first_seen, last_seen FROM discovered WHERE ieee='0x02'")
     assert d["last_seen"] is not None and d["last_seen"] >= d["first_seen"]
+
+
+def test_cached_state_keeps_real_last_seen(db):
+    # z2m republishes its state cache at startup: the payload's last_seen is the real
+    # time the sensor spoke, not the time we received the message.
+    from datetime import datetime, timezone
+    add_sensor(db, ieee="0x01", last_temp=None, last_battery=None, last_seen_at=None)
+    st = BridgeState()
+    msg(db, st, "bridge/devices", DEVICES)
+    now = datetime(2026, 10, 13, 12, 25, tzinfo=timezone.utc)
+    handle_message(db, st, "zigbee2mqtt/frigo_farmacia", json.dumps(
+        {"temperature": 24.9, "last_seen": "2026-10-09T09:41:12.356Z"}).encode(), now=now)
+    s = db.one("SELECT * FROM sensors")
+    assert s["last_seen_at"] == "2026-10-09T09:41:12+00:00"
+    d = db.one("SELECT last_seen FROM discovered WHERE ieee='0x01'")
+    assert d is None or d["last_seen"] == "2026-10-09T09:41:12+00:00"
+
+
+def test_last_seen_epoch_future_and_garbage(db):
+    from datetime import datetime, timezone
+    add_sensor(db, ieee="0x01", last_temp=None, last_battery=None, last_seen_at=None)
+    st = BridgeState()
+    msg(db, st, "bridge/devices", DEVICES)
+    now = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
+
+    def seen(last_seen):
+        handle_message(db, st, "zigbee2mqtt/frigo_farmacia", json.dumps(
+            {"temperature": 4.0, "last_seen": last_seen}).encode(), now=now)
+        return db.one("SELECT last_seen_at FROM sensors")["last_seen_at"]
+
+    assert seen(int(datetime(2026, 10, 13, 11, 0, tzinfo=timezone.utc).timestamp() * 1000)) \
+        == "2026-10-13T11:00:00+00:00"                          # epoch ms
+    assert seen("2026-10-13T13:00:00Z") == "2026-10-13T12:00:00+00:00"   # future: clamp to now
+    assert seen("garbage") == "2026-10-13T12:00:00+00:00"                # unparseable: now
+    assert seen(True) == "2026-10-13T12:00:00+00:00"
