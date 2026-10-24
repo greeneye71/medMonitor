@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
+from app import __version__
 from app.db import local, parse, utcnow
 
 WEB_DIR = Path(__file__).parent
@@ -55,7 +56,7 @@ def size(n: int) -> str:
 
 templates.env.filters.update(local=local, num=num, ago=ago, size=size)
 templates.env.globals.update(KIND_LABEL=KIND_LABEL, EVENT_LABEL=EVENT_LABEL,
-                             EVENT_TONE=EVENT_TONE)
+                             EVENT_TONE=EVENT_TONE, version=__version__)
 
 
 def flash(request: Request, message: str, tone: str = "ok") -> None:

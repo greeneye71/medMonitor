@@ -78,18 +78,41 @@ def overview_context(request: Request) -> dict:
         })
 
     mqtt = request.app.state.mqtt
+    gateways = request.app.state.gateways
+    known = {g.id for g in gateways}
+    sections = []
+    for i, g in enumerate(gateways):
+        bs = mqtt.states.get(g.id) if mqtt is not None else None
+        online = mqtt is None or bool(mqtt.connected and bs is not None and bs.online)
+        since = (bs.offline_since if bs is not None else None) or             (mqtt.started_at if mqtt is not None else None)
+        down_minutes = int((now - since).total_seconds() // 60) if not online and since else None
+        # Sensors of a gateway no longer configured are shown with the first one.
+        sec_cards = [c for c in cards
+                     if c["gateway_id"] == g.id or (i == 0 and c["gateway_id"] not in known)]
+        sections.append({"gateway": g, "online": online, "down_minutes": down_minutes,
+                         "cards": sec_cards})
+    multi = len(gateways) > 1
+
     alarms = sum(c["status"] == "alarm" for c in cards)
     offline = sum(c["status"] == "offline" for c in cards)
+    gw_down = sum(1 for sec in sections if not sec["online"] and sec["cards"])
     failing = notifier.failing_count(db)
     email_ready = bool(settings.get(db, "smtp")["host"] and settings.get(db, "recipients"))
-    if alarms:
-        band = ("alarm", f"{alarms} allarm{'e' if alarms == 1 else 'i'} temperatura attiv"
-                         f"{'o' if alarms == 1 else 'i'}")
-    elif mqtt is not None and not (mqtt.connected and mqtt.state.online):
+    alarm_text = (f"{alarms} allarm{'e' if alarms == 1 else 'i'} temperatura attiv"
+                  f"{'o' if alarms == 1 else 'i'}")
+    offline_text = (f"{offline} sensor{'e' if offline == 1 else 'i'} non risponde"
+                    f"{'' if offline == 1 else 'no'}")
+    gw_text = f"{gw_down} gateway non raggiungibil{'e' if gw_down == 1 else 'i'}"
+    if multi and (alarms or gw_down or offline):
+        parts = [t for n, t in ((alarms, alarm_text), (gw_down, gw_text), (offline, offline_text))
+                 if n]
+        band = ("alarm" if alarms else "offline", " · ".join(parts))
+    elif alarms:
+        band = ("alarm", alarm_text)
+    elif not multi and sections and not sections[0]["online"]:
         band = ("offline", "Gateway non raggiungibile: nessun dato in arrivo dai sensori")
     elif offline:
-        band = ("offline", f"{offline} sensor{'e' if offline == 1 else 'i'} non risponde"
-                           f"{'' if offline == 1 else 'no'}")
+        band = ("offline", offline_text)
     elif failing:
         band = ("warn", "Email di allarme non inviate: controlla le impostazioni email")
     elif cards and not email_ready:
@@ -98,7 +121,7 @@ def overview_context(request: Request) -> dict:
         band = ("muted", "Nessun sensore configurato")
     else:
         band = ("ok", "Tutto regolare")
-    return {"cards": cards, "band": band, "now": now}
+    return {"cards": cards, "sections": sections, "multi": multi, "band": band, "now": now}
 
 
 @router.get("/")

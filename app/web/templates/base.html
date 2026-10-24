@@ -19,8 +19,8 @@
         medMonitor
       </a>
       <nav class="nav" aria-label="Sezioni">
-        {% set sections = [("/", "Panoramica"), ("/storico", "Storico"), ("/eventi", "Eventi"), ("/impostazioni", "Impostazioni")] %}
-        {% for href, label in sections %}
+        {% set nav_items = [("/", "Panoramica"), ("/storico", "Storico"), ("/eventi", "Eventi"), ("/impostazioni", "Impostazioni")] %}
+        {% for href, label in nav_items %}
           <a href="{{ href }}" {% if (href == "/" and path == "/") or (href != "/" and path.startswith(href)) %}aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
       </nav>
@@ -36,6 +36,7 @@
       {% block content %}{% endblock %}
     </div>
   </main>
+  <footer class="foot"><div class="wrap small muted">medMonitor v{{ version }}</div></footer>
   {% block scripts %}{% endblock %}
 </body>
 </html>

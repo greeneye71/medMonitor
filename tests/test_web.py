@@ -210,3 +210,49 @@ def test_health_multi_gateway(client, app):
                              {"id": 2, "name": "Ambulatorio", "online": False, "sensors": 0}]
     add_sensor(app.state.db, ieee="0x02", name="Frigo 2", gateway_id=2)
     assert client.get("/health").json()["gateway_online"] is False
+
+
+def _two_gateways(app, online2=False, offline_since=None):
+    from types import SimpleNamespace
+
+    from app.gateways import Gateway
+    from app.mqtt import BridgeState
+    app.state.gateways = [Gateway(1, "Ambiente 1", "zigbee2mqtt", ""),
+                          Gateway(2, "Ambulatorio", "zigbee2mqtt_2", "")]
+    app.state.mqtt = SimpleNamespace(
+        connected=True, stop=lambda: None, started_at=None,
+        states={1: BridgeState(online=True),
+                2: BridgeState(online=online2, offline_since=offline_since)})
+
+
+def test_overview_sections(client, app):
+    from datetime import timedelta
+
+    from app.db import utcnow
+    _two_gateways(app, offline_since=utcnow() - timedelta(minutes=25))
+    add_sensor(app.state.db, ieee="0x01", name="Frigo A", gateway_id=1)
+    add_sensor(app.state.db, ieee="0x02", name="Frigo B", gateway_id=2)
+    html = client.get("/").text
+    assert "Ambiente 1" in html and "Ambulatorio" in html
+    assert html.index("Ambiente 1") < html.index("Frigo A") < html.index("Ambulatorio") \
+        < html.index("Frigo B")
+    assert "non raggiungibile da 25 min" in html
+    assert "1 gateway non raggiungibile" in html
+
+
+def test_overview_empty_section_link(client, app):
+    _two_gateways(app, online2=True)
+    add_sensor(app.state.db, ieee="0x01", name="Frigo A", gateway_id=1)
+    html = client.get("/partials/cards").text
+    assert "Abbina un sensore" in html
+
+
+def test_overview_single_gateway_unchanged(client, app):
+    add_sensor(app.state.db, name="Frigo A")
+    html = client.get("/").text
+    assert "gw-section-head" not in html and "Frigo A" in html
+
+
+def test_footer_version(client):
+    from app import __version__
+    assert f"medMonitor v{__version__}" in client.get("/").text

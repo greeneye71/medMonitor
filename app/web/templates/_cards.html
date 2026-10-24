@@ -1,3 +1,45 @@
+{% macro card(c) %}
+{% set st = c.status %}
+<article class="card is-{{ st }}">
+  <div class="card-head">
+    <h2>{{ c.name }}</h2>
+    <span class="kind">{{ KIND_LABEL.get(c.kind, c.kind) }}</span>
+  </div>
+
+  <div class="reading">
+    <span class="value">{{ c.last_temp | num }}</span><span class="unit">°C</span>
+  </div>
+
+  <div>
+    <div class="strip" aria-hidden="true">
+      <span class="allowed"></span>
+      {% if c.pos is not none %}<span class="marker" style="left: {{ c.pos }}%"></span>{% endif %}
+    </div>
+    <div class="strip-labels num"><span>{{ c.min_c | num }}</span><span>{{ c.max_c | num }}</span></div>
+    <span class="visually-hidden">Intervallo consentito da {{ c.min_c | num }} a {{ c.max_c | num }} °C</span>
+  </div>
+
+  {% if c.spark %}
+  <svg class="spark" viewBox="0 0 {{ c.spark.w }} {{ c.spark.h }}" preserveAspectRatio="none" role="img" aria-label="Andamento ultime 24 ore">
+    <rect class="bandrect" x="0" y="{{ c.spark.band_y }}" width="{{ c.spark.w }}" height="{{ c.spark.band_h }}"></rect>
+    <polyline points="{{ c.spark.points }}"></polyline>
+  </svg>
+  {% else %}
+  <p class="small muted spark-empty">Nessun campione nelle ultime 24 ore.</p>
+  {% endif %}
+
+  <div class="card-foot">
+    {% if st == "alarm" %}<span class="chip chip-alarm">In allarme</span>
+    {% elif st == "out" %}<span class="chip chip-out">Fuori soglia</span>
+    {% elif st == "offline" %}<span class="chip chip-offline">Non risponde</span>
+    {% else %}<span class="chip chip-ok">Regolare</span>{% endif %}
+    {% if c.battery_low %}<span class="chip chip-battery">Batteria {{ c.last_battery }}%</span>
+    {% elif c.last_battery is not none %}<span>Batteria {{ c.last_battery }}%</span>{% endif %}
+    {% if c.muted_until %}<span class="chip chip-muted">Email in pausa fino alle {{ c.muted_until | local("%H:%M") }}</span>{% endif %}
+    <span>Letto {{ c.last_seen_at | ago(now) }}</span>
+  </div>
+</article>
+{% endmacro %}
 {% set tone, message = band %}
 <div class="band band-{{ tone }}" role="status">
   <span class="dot" aria-hidden="true"></span>
@@ -5,50 +47,25 @@
   <span class="stamp">Aggiornato alle {{ now | local("%H:%M") }}</span>
 </div>
 
-{% if cards %}
+{% if multi %}
+{% for sec in sections %}
+<section class="gw-section{% if not sec.online %} is-down{% endif %}">
+  <div class="gw-section-head">
+    <h2>{{ sec.gateway.name }}</h2>
+    <span class="gw-state">{% if sec.online %}in linea{% else %}non raggiungibile{% if sec.down_minutes is not none %} da {{ sec.down_minutes }} min{% endif %}{% endif %}</span>
+  </div>
+  {% if sec.cards %}
+  <div class="cards">
+    {% for c in sec.cards %}{{ card(c) }}{% endfor %}
+  </div>
+  {% else %}
+  <p class="small muted gw-empty">Nessun sensore in questo ambiente. <a href="/impostazioni/sensori">Abbina un sensore</a></p>
+  {% endif %}
+</section>
+{% endfor %}
+{% elif cards %}
 <div class="cards">
-  {% for c in cards %}
-  {% set st = c.status %}
-  <article class="card is-{{ st }}">
-    <div class="card-head">
-      <h2>{{ c.name }}</h2>
-      <span class="kind">{{ KIND_LABEL.get(c.kind, c.kind) }}</span>
-    </div>
-
-    <div class="reading">
-      <span class="value">{{ c.last_temp | num }}</span><span class="unit">°C</span>
-    </div>
-
-    <div>
-      <div class="strip" aria-hidden="true">
-        <span class="allowed"></span>
-        {% if c.pos is not none %}<span class="marker" style="left: {{ c.pos }}%"></span>{% endif %}
-      </div>
-      <div class="strip-labels num"><span>{{ c.min_c | num }}</span><span>{{ c.max_c | num }}</span></div>
-      <span class="visually-hidden">Intervallo consentito da {{ c.min_c | num }} a {{ c.max_c | num }} °C</span>
-    </div>
-
-    {% if c.spark %}
-    <svg class="spark" viewBox="0 0 {{ c.spark.w }} {{ c.spark.h }}" preserveAspectRatio="none" role="img" aria-label="Andamento ultime 24 ore">
-      <rect class="bandrect" x="0" y="{{ c.spark.band_y }}" width="{{ c.spark.w }}" height="{{ c.spark.band_h }}"></rect>
-      <polyline points="{{ c.spark.points }}"></polyline>
-    </svg>
-    {% else %}
-    <p class="small muted spark-empty">Nessun campione nelle ultime 24 ore.</p>
-    {% endif %}
-
-    <div class="card-foot">
-      {% if st == "alarm" %}<span class="chip chip-alarm">In allarme</span>
-      {% elif st == "out" %}<span class="chip chip-out">Fuori soglia</span>
-      {% elif st == "offline" %}<span class="chip chip-offline">Non risponde</span>
-      {% else %}<span class="chip chip-ok">Regolare</span>{% endif %}
-      {% if c.battery_low %}<span class="chip chip-battery">Batteria {{ c.last_battery }}%</span>
-      {% elif c.last_battery is not none %}<span>Batteria {{ c.last_battery }}%</span>{% endif %}
-      {% if c.muted_until %}<span class="chip chip-muted">Email in pausa fino alle {{ c.muted_until | local("%H:%M") }}</span>{% endif %}
-      <span>Letto {{ c.last_seen_at | ago(now) }}</span>
-    </div>
-  </article>
-  {% endfor %}
+  {% for c in cards %}{{ card(c) }}{% endfor %}
 </div>
 {% else %}
 <div class="empty">

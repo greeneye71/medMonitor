@@ -248,3 +248,14 @@ td.when { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .grow { flex: 1 1 240px; }
 .mt { margin-top: 16px; }
 .login .error { margin-top: 8px; }
+
+.gw-section { margin-bottom: 28px; }
+.gw-section-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.gw-section-head h2 { margin: 0; font-size: 1.15rem; }
+.gw-section-head .gw-state { color: var(--muted); font-size: .875rem; }
+.gw-section.is-down .gw-section-head { border-bottom-color: var(--alarm); }
+.gw-section.is-down .gw-section-head .gw-state { color: var(--alarm); font-weight: 500; }
+.gw-section.is-down .card { opacity: .55; }
+.gw-empty { padding: 16px; }
+.foot { padding: 24px 0 32px; text-align: center; }
