@@ -262,3 +262,22 @@ def test_grace_after_gateway_back(db):
                (iso(now - timedelta(minutes=5)),))
     gw_run(db, now, {1: BridgeState(online=True)})
     assert "OFFLINE_OPEN" not in events(db)
+
+
+def test_sensor_email_names_ambiente_with_two_gateways(db):
+    gws = GW + [Gateway(2, "Ambulatorio", "zigbee2mqtt_2", "")]
+    add_sensor(db, last_seen_at=iso(T0))
+    db.execute("UPDATE sensors SET last_temp=9.5, last_seen_at=?", (iso(T0),))
+    states = {1: BridgeState(online=True), 2: BridgeState(online=True)}
+    monitor.run_cycle(db, T0 + timedelta(minutes=1), gws, states, True, T0)
+    monitor.run_cycle(db, T0 + timedelta(minutes=11), gws, states, True, T0)
+    assert outbox(db) and "(Ambiente 1)" in outbox(db)[0]
+
+
+def test_sensor_email_no_ambiente_with_one_gateway(db):
+    add_sensor(db, last_seen_at=iso(T0))
+    db.execute("UPDATE sensors SET last_temp=9.5, last_seen_at=?", (iso(T0),))
+    states = {1: BridgeState(online=True)}
+    gw_run(db, T0 + timedelta(minutes=1), states)
+    gw_run(db, T0 + timedelta(minutes=11), states)
+    assert outbox(db) and "(" not in outbox(db)[0]

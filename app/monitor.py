@@ -92,7 +92,7 @@ def evaluate_gateways(db: Database, now: datetime, gateways, states, connected: 
                 db.add_event(now, None, "GATEWAY_OFFLINE_CLOSE",
                              f"{g.name}: gateway di nuovo raggiungibile")
                 if gst["email_sent"]:
-                    notify(db, now, "gateway_offline_close", gateway=g)
+                    notify(db, now, "gateway_offline_close", gateway=g, minutes=offline_min)
                 db.execute("UPDATE gateway_state SET offline_open=0, offline_since=NULL, "
                            "email_sent=0 WHERE gateway_id=?", (g.id,))
     return down
@@ -100,19 +100,24 @@ def evaluate_gateways(db: Database, now: datetime, gateways, states, connected: 
 
 def evaluate(db: Database, now: datetime, sampled: dict[str, float],
              gateways_down: set[int] = frozenset(),
-             back_at: dict[int, datetime] | None = None) -> None:
-    """Update alarm state for every active sensor; log events and queue emails."""
+             back_at: dict[int, datetime] | None = None,
+             ambienti: dict[int, str] | None = None) -> None:
+    """Update alarm state for every active sensor; log events and queue emails.
+
+    `ambienti` maps gateway id to name; emails name the ambiente only when it is given.
+    """
     alarm = settings.get(db, "alarm")
     back_at = back_at or {}
+    ambienti = ambienti or {}
     for s in db.query("SELECT * FROM sensors WHERE active=1"):
         with db.transaction():      # event, email and state change together or not at all
             _evaluate_sensor(db, now, sampled, s, alarm, s["gateway_id"] in gateways_down,
-                             back_at.get(s["gateway_id"]))
+                             back_at.get(s["gateway_id"]), ambienti.get(s["gateway_id"]))
 
 
 def _evaluate_sensor(db: Database, now: datetime, sampled: dict[str, float], s: dict,
                      alarm: dict, gateway_down: bool = False,
-                     back_at: datetime | None = None) -> None:
+                     back_at: datetime | None = None, ambiente: str | None = None) -> None:
     n_required = int(alarm["consecutive_samples"])
     offline_min = int(alarm["offline_minutes"])
     batt_low = int(alarm["battery_percent"])
@@ -126,7 +131,7 @@ def _evaluate_sensor(db: Database, now: datetime, sampled: dict[str, float], s: 
         if muted:
             st["mute_pending"] = 1
         else:
-            notify(db, now, kind, s, **ctx)
+            notify(db, now, kind, s, ambiente, **ctx)
             sent.add(kind)
 
     # OFFLINE
@@ -193,12 +198,12 @@ def _evaluate_sensor(db: Database, now: datetime, sampled: dict[str, float], s: 
     if st["mute_pending"] and not muted:
         st["mute_pending"] = 0
         if st["temp_open"] and "temp_open" not in sent:
-            notify(db, now, "temp_open", s, value=s["last_temp"], since=st["temp_since"])
+            notify(db, now, "temp_open", s, ambiente, value=s["last_temp"], since=st["temp_since"])
         if st["offline_open"] and "offline_open" not in sent and not gateway_down:
-            notify(db, now, "offline_open", s, minutes=offline_min)
+            notify(db, now, "offline_open", s, ambiente, minutes=offline_min)
             st["offline_email"] = 1
         if st["battery_open"] and "battery_open" not in sent:
-            notify(db, now, "battery_open", s)
+            notify(db, now, "battery_open", s, ambiente)
 
     _save_state(db, st)
 
@@ -213,7 +218,8 @@ def run_cycle(db: Database, now: datetime, gateways=None, states=None, connected
     down = evaluate_gateways(db, now, gateways, states or {}, connected, started_at)
     back_at = {r["gateway_id"]: parse(r["back_at"])
                for r in db.query("SELECT gateway_id, back_at FROM gateway_state")}
-    evaluate(db, now, sampled, down, back_at)
+    ambienti = {g.id: g.name for g in gateways} if len(gateways) > 1 else {}
+    evaluate(db, now, sampled, down, back_at, ambienti)
 
 
 def sensor_status(sensor: dict, st: dict | None, now: datetime, offline_minutes: int) -> str:

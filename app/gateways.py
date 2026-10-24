@@ -15,6 +15,11 @@ class Gateway:
     config: str
     frontend_port: int = 8080
 
+    @property
+    def container(self) -> str:
+        """Quadlet container/unit name written by install.sh."""
+        return "zigbee2mqtt" if self.id == 1 else f"zigbee2mqtt-{self.id}"
+
 
 def _parse(raw) -> list[Gateway]:
     items = raw["gateways"]

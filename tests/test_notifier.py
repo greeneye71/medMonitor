@@ -95,3 +95,51 @@ def test_partial_refusal_logs_email_error(db):
     errors = db.query("SELECT message FROM events WHERE type='EMAIL_ERROR'")
     assert len(errors) == 1 and "b@example.com" in errors[0]["message"]
     assert "a@example.com" not in errors[0]["message"]
+
+
+# --- multi-gateway ---
+from app.gateways import Gateway  # noqa: E402
+
+FRIGO2 = {"name": "Frigo 2", "min_c": 2, "max_c": 8, "last_battery": 15, "last_temp": 5,
+          "last_seen_at": None}
+
+
+def test_subject_with_ambiente():
+    subject, text, html = notifier.render("temp_open", FRIGO2, T0, ambiente="Ambulatorio",
+                                          value=9.2)
+    assert subject == "[medMonitor] ALLARME TEMPERATURA — Frigo 2 (Ambulatorio) 9,2 °C"
+    assert "Ambiente: Ambulatorio" in text and "Ambiente: Ambulatorio" in html
+    assert "(Ambulatorio)" in notifier.render("offline_open", FRIGO2, T0, ambiente="Ambulatorio",
+                                              minutes=120)[0]
+
+
+def test_subject_single_gateway_unchanged():
+    subject, text, _ = notifier.render("temp_open", FRIGO2, T0, value=9.2)
+    assert subject == "[medMonitor] ALLARME TEMPERATURA — Frigo 2 9,2 °C"
+    assert "Ambiente" not in text
+
+
+def test_gateway_open_email():
+    gw = Gateway(2, "Ambulatorio", "zigbee2mqtt_2", "")
+    subject, text, _ = notifier.render("gateway_offline_open", None, T0, gateway=gw,
+                                       sensors=["Frigo 2", "Freezer 3"], minutes=120)
+    assert subject == "[medMonitor] GATEWAY NON RAGGIUNGIBILE — Ambulatorio"
+    assert "Frigo 2" in text and "Freezer 3" in text
+    assert "systemctl --user status zigbee2mqtt-2" in text
+    assert "PoE" in text and "IP" in text
+
+
+def test_gateway_open_email_first_gateway_container():
+    gw = Gateway(1, "Ambiente 1", "zigbee2mqtt", "")
+    _, text, _ = notifier.render("gateway_offline_open", None, T0, gateway=gw,
+                                 sensors=["Frigo 1"], minutes=120)
+    assert "Sul server: systemctl --user status zigbee2mqtt" in text.splitlines()
+    assert "zigbee2mqtt-1" not in text
+
+
+def test_gateway_close_email():
+    gw = Gateway(2, "Ambulatorio", "zigbee2mqtt_2", "")
+    subject, text, _ = notifier.render("gateway_offline_close", None, T0, gateway=gw,
+                                       minutes=120)
+    assert subject == "[medMonitor] GATEWAY DI NUOVO RAGGIUNGIBILE — Ambulatorio"
+    assert "Ambulatorio" in text

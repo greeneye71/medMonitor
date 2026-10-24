@@ -22,39 +22,44 @@ def _fmt(v) -> str:
     return "—" if v is None else f"{v:.1f}".replace(".", ",")
 
 
-def render(kind: str, sensor: dict | None = None, now: datetime | None = None, **ctx):
-    """Return (subject, text, html) for an email of the given kind."""
+def render(kind: str, sensor: dict | None = None, now: datetime | None = None,
+           ambiente: str | None = None, **ctx):
+    """Return (subject, text, html) for an email of the given kind.
+
+    `ambiente` (gateway name) is given only when there is more than one gateway.
+    """
     s = sensor or {}
     name = s.get("name", "")
+    label = f"{name} ({ambiente})" if ambiente else name
     when = local(now) if now else ""
     rng = f"{_fmt(s.get('min_c'))} … {_fmt(s.get('max_c'))} °C"
     if kind == "temp_open":
         head, color = "ALLARME TEMPERATURA", "alarm"
-        title = f"{name} {_fmt(ctx.get('value'))} °C"
+        title = f"{label} {_fmt(ctx.get('value'))} °C"
         lines = [f"Il sensore «{name}» è fuori soglia.",
                  f"Temperatura attuale: {_fmt(ctx.get('value'))} °C",
                  f"Intervallo ammesso: {rng}",
                  f"Fuori soglia da: {local(ctx.get('since'))}"]
     elif kind == "temp_close":
         head, color = "TEMPERATURA RIENTRATA", "ok"
-        title = f"{name} {_fmt(ctx.get('value'))} °C"
+        title = f"{label} {_fmt(ctx.get('value'))} °C"
         lines = [f"Il sensore «{name}» è tornato nell'intervallo {rng}.",
                  f"Temperatura attuale: {_fmt(ctx.get('value'))} °C",
                  f"Durata dell'anomalia: {ctx.get('duration', '—')}"]
     elif kind == "offline_open":
         head, color = "SENSORE NON RISPONDE", "warn"
-        title = name
+        title = label
         lines = [f"Il sensore «{name}» non invia dati da più di {ctx.get('minutes')} minuti.",
                  f"Ultimo dato ricevuto: {local(s.get('last_seen_at'))}",
                  "Controllare batteria, distanza dal gateway e stato del gateway."]
     elif kind == "offline_close":
         head, color = "SENSORE DI NUOVO ONLINE", "ok"
-        title = name
+        title = label
         lines = [f"Il sensore «{name}» ha ripreso a inviare dati.",
                  f"Temperatura attuale: {_fmt(s.get('last_temp'))} °C"]
     elif kind == "battery_open":
         head, color = "BATTERIA SCARICA", "warn"
-        title = f"{name} {s.get('last_battery')}%"
+        title = f"{label} {s.get('last_battery')}%"
         lines = [f"La batteria del sensore «{name}» è al {s.get('last_battery')}%.",
                  "Sostituire la batteria appena possibile."]
     elif kind == "gateway_offline_open":
@@ -62,12 +67,17 @@ def render(kind: str, sensor: dict | None = None, now: datetime | None = None, *
         head, color = "GATEWAY NON RAGGIUNGIBILE", "alarm"
         title = getattr(gw, "name", "")
         lines = [f"Il gateway «{title}» non risponde da più di {ctx.get('minutes')} minuti.",
-                 "Sensori interessati: " + ", ".join(ctx.get("sensors", []))]
+                 "Sensori interessati: " + ", ".join(ctx.get("sensors", [])),
+                 "Controllare: alimentazione/PoE del gateway, cavo di rete, indirizzo IP "
+                 "del gateway (Impostazioni → Gateway).",
+                 f"Sul server: systemctl --user status {getattr(gw, 'container', '')}"]
     elif kind == "gateway_offline_close":
         gw = ctx.get("gateway")
         head, color = "GATEWAY DI NUOVO RAGGIUNGIBILE", "ok"
         title = getattr(gw, "name", "")
-        lines = [f"Il gateway «{title}» è di nuovo raggiungibile."]
+        lines = [f"Il gateway «{title}» è di nuovo raggiungibile.",
+                 "I sensori riprendono a inviare dati; quelli ancora silenziosi dopo "
+                 f"{ctx.get('minutes')} minuti saranno segnalati singolarmente."]
     elif kind == "test":
         head, color = "EMAIL DI PROVA", "info"
         title = ""
@@ -75,6 +85,8 @@ def render(kind: str, sensor: dict | None = None, now: datetime | None = None, *
                  "Se la ricevi, la configurazione email è corretta."]
     else:
         raise ValueError(f"tipo email sconosciuto: {kind}")
+    if ambiente and sensor is not None:
+        lines.insert(1, f"Ambiente: {ambiente}")
     subject = f"[medMonitor] {head}" + (f" — {title}" if title else "")
     text = "\n".join([head, ""] + lines + ["", f"medMonitor · {when}"])
     body = "".join(f"<p style='margin:0 0 8px'>{html.escape(str(x))}</p>" for x in lines)
@@ -94,8 +106,9 @@ def enqueue(db: Database, now: datetime, subject: str, text: str, html_doc: str)
                (iso(now), subject, text, html_doc))
 
 
-def notify(db: Database, now: datetime, kind: str, sensor: dict | None = None, **ctx) -> None:
-    enqueue(db, now, *render(kind, sensor, now, **ctx))
+def notify(db: Database, now: datetime, kind: str, sensor: dict | None = None,
+           ambiente: str | None = None, **ctx) -> None:
+    enqueue(db, now, *render(kind, sensor, now, ambiente, **ctx))
 
 
 async def send_email(smtp: dict, recipients: list[str], subject: str, text: str,
