@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import archive, gateways, monitor, notifier, settings
+from app import __version__, archive, gateways, monitor, notifier, settings
 from app.auth import NotAuthenticated, hash_password
 from app.db import LOCAL_TZ, Database, utcnow
 from app.mqtt import MqttService
@@ -112,10 +112,18 @@ def create_app(data_dir: str | Path | None = None, start_services: bool = True,
             db_ok = str(exc)
         mqtt = app.state.mqtt
         sch = app.state.scheduler
+        counts = {r["gateway_id"]: r["n"] for r in db.query(
+            "SELECT gateway_id, COUNT(*) n FROM sensors WHERE active=1 GROUP BY gateway_id")}
+        gws = [{"id": g.id, "name": g.name,
+                "online": bool(mqtt and g.id in mqtt.states and mqtt.states[g.id].online),
+                "sensors": counts.get(g.id, 0)} for g in app.state.gateways]
         return JSONResponse({
+            "version": __version__,
             "db": db_ok,
             "mqtt_connected": bool(mqtt and mqtt.connected),
-            "gateway_online": bool(mqtt and mqtt.state.online),
+            # gateways without active sensors don't count: nothing depends on them
+            "gateway_online": bool(mqtt) and all(g["online"] for g in gws if g["sensors"]),
+            "gateways": gws,
             "scheduler_running": bool(sch and sch.running),
             "outbox_pending": notifier.pending_count(db),
         })

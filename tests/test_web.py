@@ -190,3 +190,23 @@ def test_added_sensor_keeps_real_last_seen(admin, app):
     admin.post("/impostazioni/sensori/aggiungi",
                data={"ieee": "0xaa", "name": "Frigo", "kind": "fridge", "min_c": "2", "max_c": "8"})
     assert db.one("SELECT last_seen_at FROM sensors WHERE ieee='0xaa'")["last_seen_at"] == old
+
+
+def test_health_multi_gateway(client, app):
+    from types import SimpleNamespace
+
+    from app import __version__
+    from app.gateways import Gateway
+    from app.mqtt import BridgeState
+    app.state.gateways = [Gateway(1, "Ambiente 1", "zigbee2mqtt", ""),
+                          Gateway(2, "Ambulatorio", "zigbee2mqtt_2", "")]
+    app.state.mqtt = SimpleNamespace(connected=True, stop=lambda: None, states={1: BridgeState(online=True),
+                                                             2: BridgeState(online=False)})
+    add_sensor(app.state.db)
+    h = client.get("/health").json()
+    assert h["version"] == __version__
+    assert h["gateway_online"] is True        # gateway 2 is down but has no sensors
+    assert h["gateways"] == [{"id": 1, "name": "Ambiente 1", "online": True, "sensors": 1},
+                             {"id": 2, "name": "Ambulatorio", "online": False, "sensors": 0}]
+    add_sensor(app.state.db, ieee="0x02", name="Frigo 2", gateway_id=2)
+    assert client.get("/health").json()["gateway_online"] is False
