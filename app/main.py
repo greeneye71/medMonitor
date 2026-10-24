@@ -34,10 +34,19 @@ def _job(name, fn):
     return run
 
 
+def _sampling(app: FastAPI, db: Database) -> None:
+    m = getattr(app.state, "mqtt", None)
+    if m is None:
+        monitor.run_cycle(db, utcnow())
+    else:
+        monitor.run_cycle(db, utcnow(), app.state.gateways, m.states, m.connected,
+                          m.started_at)
+
+
 def build_scheduler(app: FastAPI) -> BackgroundScheduler:
     db = app.state.db
     sch = BackgroundScheduler(timezone=LOCAL_TZ)
-    sch.add_job(_job("campionamento", lambda: monitor.run_cycle(db, utcnow())),
+    sch.add_job(_job("campionamento", lambda: _sampling(app, db)),
                 "cron", minute="*/10", id="sampling", coalesce=True, max_instances=1)
     sch.add_job(_job("email", lambda: notifier.process_outbox(db, utcnow())),
                 "interval", minutes=1, id="outbox", coalesce=True, max_instances=1)

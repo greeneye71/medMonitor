@@ -173,3 +173,92 @@ def test_crash_mid_evaluation_rolls_back_sensor(db, monkeypatch):
     monkeypatch.setattr(monitor, "notify", real_notify)
     cycle(db, 2, temp=9.8)
     assert events(db) == ["TEMP_OPEN"] and len(outbox(db)) == 1
+
+
+# --- gateway alarms (multi-gateway) ---
+from app import settings  # noqa: E402
+from app.gateways import Gateway  # noqa: E402
+from app.mqtt import BridgeState  # noqa: E402
+
+GW = [Gateway(1, "Ambiente 1", "zigbee2mqtt", "")]
+
+
+def short_offline(db, minutes=30):
+    settings.set(db, "alarm", {**settings.get(db, "alarm"), "offline_minutes": minutes})
+
+
+def gw_run(db, now, states, connected=True, started_at=T0):
+    monitor.run_cycle(db, now, GW, states, connected, started_at)
+
+
+def test_gateway_offline_opens_after_minutes(db):
+    short_offline(db)
+    setup_sensor(db)
+    states = {1: BridgeState(online=False, offline_since=T0)}
+    gw_run(db, T0 + timedelta(minutes=20), states)
+    assert "GATEWAY_OFFLINE_OPEN" not in events(db)
+    gw_run(db, T0 + timedelta(minutes=40), states)
+    assert events(db).count("GATEWAY_OFFLINE_OPEN") == 1
+    assert len(outbox(db)) == 1 and "GATEWAY NON RAGGIUNGIBILE" in outbox(db)[0]
+    gw_run(db, T0 + timedelta(minutes=50), states)
+    assert events(db).count("GATEWAY_OFFLINE_OPEN") == 1 and len(outbox(db)) == 1
+
+
+def test_gateway_never_online_opens_alarm(db):
+    short_offline(db)
+    setup_sensor(db)
+    now = T0 + timedelta(minutes=40)
+    gw_run(db, now, {1: BridgeState()}, started_at=now - timedelta(minutes=40))
+    assert "GATEWAY_OFFLINE_OPEN" in events(db)
+
+
+def test_gateway_close_sends_email(db):
+    short_offline(db)
+    setup_sensor(db)
+    states = {1: BridgeState(online=False, offline_since=T0)}
+    gw_run(db, T0 + timedelta(minutes=40), states)
+    states[1].online = True
+    gw_run(db, T0 + timedelta(minutes=50), states)
+    assert "GATEWAY_OFFLINE_CLOSE" in events(db)
+    assert "GATEWAY DI NUOVO RAGGIUNGIBILE" in outbox(db)[-1]
+
+
+def test_no_gateway_alarm_without_sensors(db):
+    short_offline(db)
+    gw_run(db, T0 + timedelta(minutes=40), {1: BridgeState(online=False, offline_since=T0)})
+    assert events(db) == [] and outbox(db) == []
+
+
+def test_no_gateway_alarm_when_mqtt_disconnected(db):
+    short_offline(db)
+    setup_sensor(db)
+    gw_run(db, T0 + timedelta(minutes=40), {1: BridgeState(online=False, offline_since=T0)},
+           connected=False)
+    assert "GATEWAY_OFFLINE_OPEN" not in events(db)
+
+
+def test_sensor_offline_email_suppressed_when_bridge_down(db):
+    setup_sensor(db)                          # offline after 120 min
+    states = {1: BridgeState(online=False, offline_since=T0 + timedelta(minutes=100))}
+    gw_run(db, T0 + timedelta(minutes=130), states)
+    assert events(db) == ["OFFLINE_OPEN"] and outbox(db) == []
+
+
+def test_back_online_email_only_if_offline_sent(db):
+    setup_sensor(db)
+    states = {1: BridgeState(online=False, offline_since=T0 + timedelta(minutes=100))}
+    gw_run(db, T0 + timedelta(minutes=130), states)
+    states[1].online = True
+    now = T0 + timedelta(minutes=140)
+    db.execute("UPDATE sensors SET last_seen_at=?", (iso(now - timedelta(minutes=1)),))
+    gw_run(db, now, states)
+    assert events(db) == ["OFFLINE_OPEN", "OFFLINE_CLOSE"] and outbox(db) == []
+
+
+def test_grace_after_gateway_back(db):
+    now = T0 + timedelta(hours=3)
+    add_sensor(db, last_seen_at=iso(now - timedelta(hours=2, minutes=1)))
+    db.execute("INSERT INTO gateway_state(gateway_id, back_at) VALUES(1, ?)",
+               (iso(now - timedelta(minutes=5)),))
+    gw_run(db, now, {1: BridgeState(online=True)})
+    assert "OFFLINE_OPEN" not in events(db)

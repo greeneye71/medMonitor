@@ -78,7 +78,8 @@ class Database:
     def _migrate(self) -> None:
         added = [("discovered", "last_seen", "TEXT"),
                  ("sensors", "gateway_id", "INTEGER NOT NULL DEFAULT 1"),
-                 ("discovered", "gateway_id", "INTEGER NOT NULL DEFAULT 1")]
+                 ("discovered", "gateway_id", "INTEGER NOT NULL DEFAULT 1"),
+                 ("alert_state", "offline_email", "INTEGER DEFAULT 0")]
         for table, col, decl in added:
             cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if col not in cols:

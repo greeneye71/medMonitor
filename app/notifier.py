@@ -57,6 +57,17 @@ def render(kind: str, sensor: dict | None = None, now: datetime | None = None, *
         title = f"{name} {s.get('last_battery')}%"
         lines = [f"La batteria del sensore «{name}» è al {s.get('last_battery')}%.",
                  "Sostituire la batteria appena possibile."]
+    elif kind == "gateway_offline_open":
+        gw = ctx.get("gateway")
+        head, color = "GATEWAY NON RAGGIUNGIBILE", "alarm"
+        title = getattr(gw, "name", "")
+        lines = [f"Il gateway «{title}» non risponde da più di {ctx.get('minutes')} minuti.",
+                 "Sensori interessati: " + ", ".join(ctx.get("sensors", []))]
+    elif kind == "gateway_offline_close":
+        gw = ctx.get("gateway")
+        head, color = "GATEWAY DI NUOVO RAGGIUNGIBILE", "ok"
+        title = getattr(gw, "name", "")
+        lines = [f"Il gateway «{title}» è di nuovo raggiungibile."]
     elif kind == "test":
         head, color = "EMAIL DI PROVA", "info"
         title = ""
