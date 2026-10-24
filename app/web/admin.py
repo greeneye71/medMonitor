@@ -109,7 +109,7 @@ def discovered_partial(request: Request):
 @router.post("/sensori/abbina")
 def pair(request: Request):
     mqtt = _mqtt(request)
-    if mqtt and mqtt.permit_join(120):
+    if mqtt and mqtt.permit_join(mqtt.gateways[0].id, 120):
         mqtt.state.permit_join_until = time.time() + 120
         flash(request, "Abbinamento aperto per 2 minuti: premi il tasto sul sensore.")
     else:
@@ -192,7 +192,7 @@ def remove_sensor(request: Request, ieee: str):
         db.execute("DELETE FROM alert_state WHERE sensor_id=?", (ieee,))
         db.execute("DELETE FROM discovered WHERE ieee=?", (ieee,))
         if _mqtt(request):
-            _mqtt(request).remove_device(ieee)
+            _mqtt(request).remove_device(sensor["gateway_id"] or 1, ieee)
         db.add_event(utcnow(), ieee, "SENSOR_REMOVED", f"Sensore «{sensor['name']}» rimosso")
         flash(request, f"Sensore «{sensor['name']}» rimosso. Lo storico resta disponibile.")
     return _back("sensori")
@@ -316,7 +316,7 @@ def gateway_save(request: Request, ip: str = Form(""), port: str = Form("6638"),
     db.add_event(utcnow(), None, "CONFIG",
                  f"Gateway: {ip}:{port_n}, adapter {adapter}, canale {channel_n}")
     mqtt = _mqtt(request)
-    restarted = bool(mqtt and mqtt.restart_bridge())
+    restarted = bool(mqtt and mqtt.restart_bridge(mqtt.gateways[0].id))
     msg = "Gateway salvato. " + ("zigbee2mqtt si sta riavviando." if restarted else
                                  "Riavvia zigbee2mqtt per applicare: "
                                  "systemctl --user restart zigbee2mqtt")

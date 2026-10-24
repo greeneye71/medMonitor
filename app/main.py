@@ -63,7 +63,8 @@ def create_app(data_dir: str | Path | None = None, start_services: bool = True,
     async def lifespan(app: FastAPI):
         if start_services:
             app.state.mqtt = MqttService(db, os.environ.get("MQTT_HOST", "mosquitto"),
-                                         int(os.environ.get("MQTT_PORT", "1883")))
+                                         int(os.environ.get("MQTT_PORT", "1883")),
+                                         app.state.gateways)
             app.state.mqtt.start()
             app.state.scheduler = build_scheduler(app)
             app.state.scheduler.start()
