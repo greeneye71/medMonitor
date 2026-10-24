@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import archive, monitor, notifier, settings
+from app import archive, gateways, monitor, notifier, settings
 from app.auth import NotAuthenticated, hash_password
 from app.db import LOCAL_TZ, Database, utcnow
 from app.mqtt import MqttService
@@ -80,6 +80,7 @@ def create_app(data_dir: str | Path | None = None, start_services: bool = True,
     app.state.scheduler = None
     app.state.data_dir = data_dir
     app.state.z2m_path = Path(z2m_path or os.environ.get("Z2M_CONFIG", "/z2m/configuration.yaml"))
+    app.state.gateways = gateways.load(data_dir, app.state.z2m_path)
 
     app.add_middleware(SessionMiddleware,
                        secret_key=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
