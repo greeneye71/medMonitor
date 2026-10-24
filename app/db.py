@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS sensors(
     kind TEXT CHECK(kind IN ('fridge','freezer')),
     min_c REAL NOT NULL, max_c REAL NOT NULL, active INTEGER DEFAULT 1,
     muted_until TEXT, last_temp REAL, last_battery INTEGER, last_seen_at TEXT,
-    created_at TEXT);
+    created_at TEXT, gateway_id INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS samples(sensor_id TEXT, ts TEXT, temp_c REAL, battery INTEGER);
 CREATE INDEX IF NOT EXISTS idx_samples ON samples(sensor_id, ts);
 CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples(ts);
@@ -31,7 +31,10 @@ CREATE TABLE IF NOT EXISTS outbox(
     attempts INTEGER DEFAULT 0, last_error TEXT, last_attempt_at TEXT, sent_at TEXT);
 CREATE TABLE IF NOT EXISTS discovered(
     ieee TEXT PRIMARY KEY, friendly_name TEXT, model TEXT, first_seen TEXT, last_temp REAL,
-    last_seen TEXT);
+    last_seen TEXT, gateway_id INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS gateway_state(
+    gateway_id INTEGER PRIMARY KEY, offline_open INTEGER DEFAULT 0, offline_since TEXT,
+    back_at TEXT, email_sent INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
 """
 
@@ -73,9 +76,13 @@ class Database:
         self._migrate()
 
     def _migrate(self) -> None:
-        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(discovered)")}
-        if "last_seen" not in cols:
-            self.conn.execute("ALTER TABLE discovered ADD COLUMN last_seen TEXT")
+        added = [("discovered", "last_seen", "TEXT"),
+                 ("sensors", "gateway_id", "INTEGER NOT NULL DEFAULT 1"),
+                 ("discovered", "gateway_id", "INTEGER NOT NULL DEFAULT 1")]
+        for table, col, decl in added:
+            cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            if col not in cols:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
     def execute(self, sql: str, params=()) -> sqlite3.Cursor:
         with self.lock:
