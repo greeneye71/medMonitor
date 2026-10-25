@@ -31,12 +31,13 @@
 {% if rows %}
 <div class="table-wrap">
   <table>
-    <thead><tr><th>Quando</th><th>Evento</th><th>Sensore</th><th>Dettaglio</th></tr></thead>
+    <thead><tr><th>Quando</th><th>Evento</th>{% if multi %}<th>Ambiente</th>{% endif %}<th>Sensore</th><th>Dettaglio</th></tr></thead>
     <tbody>
       {% for e in rows %}
       <tr>
         <td class="when">{{ e.ts | local }}</td>
         <td><span class="tone tone-{{ EVENT_TONE.get(e.type, 'none') }}">{{ EVENT_LABEL.get(e.type, e.type) }}</span></td>
+        {% if multi %}<td>{{ gw_names.get(e.gw_id, "—") if e.gw_id else "—" }}</td>{% endif %}
         <td>{{ e.sensor_name or ("—" if not e.sensor_id else e.sensor_id) }}</td>
         <td>{{ e.message }}</td>
       </tr>

@@ -20,7 +20,12 @@
     <div class="grow">
       <label for="sensor">Sensore</label>
       <select id="sensor" name="sensor" data-autosubmit>
-        {% for s in sensors %}<option value="{{ s.ieee }}" {% if s.ieee == sensor.ieee %}selected{% endif %}>{{ s.name }}{% if not s.active %} (rimosso){% endif %}</option>{% endfor %}
+        {% macro opt(s) %}<option value="{{ s.ieee }}" {% if s.ieee == sensor.ieee %}selected{% endif %}>{{ s.name }}{% if not s.active %} (rimosso){% endif %}</option>{% endmacro %}
+        {% if multi %}
+        {% for gid, group in sensors | groupby("gateway_id") %}<optgroup label="{{ gw_names.get(gid, 'Gateway ' ~ gid) }}">{% for s in group %}{{ opt(s) }}{% endfor %}</optgroup>{% endfor %}
+        {% else %}
+        {% for s in sensors %}{{ opt(s) }}{% endfor %}
+        {% endif %}
       </select>
     </div>
     <div>

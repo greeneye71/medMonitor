@@ -83,14 +83,14 @@ def evaluate_gateways(db: Database, now: datetime, gateways, states, connected: 
                 if not sensors:
                     continue
                 db.add_event(now, None, "GATEWAY_OFFLINE_OPEN",
-                             f"{g.name}: gateway non raggiungibile da oltre {offline_min} min")
+                             f"{g.name}: gateway non raggiungibile da oltre {offline_min} min", g.id)
                 notify(db, now, "gateway_offline_open", gateway=g,
                        sensors=[s["name"] for s in sensors], minutes=offline_min)
                 db.execute("UPDATE gateway_state SET offline_open=1, offline_since=?, "
                            "email_sent=1 WHERE gateway_id=?", (iso(since), g.id))
             elif bs.online and gst["offline_open"]:
                 db.add_event(now, None, "GATEWAY_OFFLINE_CLOSE",
-                             f"{g.name}: gateway di nuovo raggiungibile")
+                             f"{g.name}: gateway di nuovo raggiungibile", g.id)
                 if gst["email_sent"]:
                     notify(db, now, "gateway_offline_close", gateway=g, minutes=offline_min)
                 db.execute("UPDATE gateway_state SET offline_open=0, offline_since=NULL, "

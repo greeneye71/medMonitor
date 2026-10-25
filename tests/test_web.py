@@ -357,3 +357,37 @@ def test_remove_uses_sensor_gateway(admin, app, tmp_path):
     admin.post("/impostazioni/sensori/0x02/rimuovi")
     assert m.sent == [("zigbee2mqtt_2/bridge/request/device/remove",
                        {"id": "0x02", "force": True})]
+
+
+def test_history_optgroup(client, app):
+    _two_gateways(app)
+    add_sensor(app.state.db, ieee="0x01", name="Frigo A", gateway_id=1)
+    add_sensor(app.state.db, ieee="0x02", name="Frigo B", gateway_id=2)
+    html = client.get("/storico").text
+    assert '<optgroup label="Ambiente 1">' in html and '<optgroup label="Ambulatorio">' in html
+    assert html.index("Ambulatorio") < html.index("Frigo B")
+
+
+def test_history_single_gateway_no_optgroup(client, app):
+    add_sensor(app.state.db)
+    assert "<optgroup" not in client.get("/storico").text
+
+
+def test_events_labels(client, app):
+    from app.db import utcnow
+    _two_gateways(app)
+    db = app.state.db
+    add_sensor(db, ieee="0x02", name="Frigo B", gateway_id=2)
+    db.add_event(utcnow(), None, "GATEWAY_OFFLINE_OPEN", "Ambulatorio: gateway non raggiungibile", 2)
+    db.add_event(utcnow(), None, "GATEWAY_OFFLINE_CLOSE", "Ambulatorio: gateway di nuovo raggiungibile", 2)
+    db.add_event(utcnow(), "0x02", "SENSOR_MOVED", "Frigo B: da Ambiente 1 a Ambulatorio")
+    html = client.get("/eventi").text
+    for label in ("Gateway non raggiungibile", "Gateway di nuovo raggiungibile", "Sensore spostato"):
+        assert f">{label}</span>" in html
+    assert "<th>Ambiente</th>" in html
+    assert html.count("<td>Ambulatorio</td>") == 3
+
+
+def test_events_single_gateway_no_column(client, app):
+    add_sensor(app.state.db)
+    assert "<th>Ambiente</th>" not in client.get("/eventi").text

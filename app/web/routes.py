@@ -176,6 +176,11 @@ def history_query(request: Request, sensor: str | None, period: str, from_: str 
             "to_value": (end - timedelta(seconds=1)).astimezone(LOCAL_TZ).strftime("%Y-%m-%d")}
 
 
+def _gw_ctx(request: Request) -> dict:
+    gws = request.app.state.gateways
+    return {"multi": len(gws) > 1, "gw_names": {g.id: g.name for g in gws}}
+
+
 def stats(samples: list[dict], min_c: float, max_c: float) -> dict | None:
     if not samples:
         return None
@@ -198,6 +203,7 @@ def history(request: Request, sensor: str | None = None, period: str = "24h",
         "start": int(ctx["start"].timestamp() * 1000), "end": int(ctx["end"].timestamp() * 1000),
     }
     ctx["csv_query"] = str(request.url.query)
+    ctx.update(_gw_ctx(request))
     return render(request, "history.html", **ctx)
 
 
@@ -237,13 +243,15 @@ def events(request: Request, sensor: str = "", type: str = "", page: int = 1):  
     pages = max(1, -(-total // PAGE_SIZE))
     page = min(max(1, page), pages)
     rows = db.query(
-        f"SELECT e.*, s.name AS sensor_name FROM events e LEFT JOIN sensors s "
+        f"SELECT e.*, s.name AS sensor_name, COALESCE(s.gateway_id, CASE WHEN e.type "
+        f"LIKE 'GATEWAY%' THEN CAST(e.value AS INTEGER) END) AS gw_id FROM events e "
+        f"LEFT JOIN sensors s "
         f"ON s.ieee=e.sensor_id {sql_where} ORDER BY e.id DESC LIMIT ? OFFSET ?",
         params + [PAGE_SIZE, (page - 1) * PAGE_SIZE])
     sensors = db.query("SELECT ieee, name FROM sensors ORDER BY name COLLATE NOCASE")
     return render(request, "events.html", rows=rows, sensors=sensors, sensor=sensor,
                   type=type if type in EVENT_LABEL else "", page=page, pages=pages,
-                  total=total)
+                  total=total, **_gw_ctx(request))
 
 
 # ---------- login ----------

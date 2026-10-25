@@ -19,10 +19,13 @@ EVENT_LABEL = {
     "MUTE": "Silenziamento", "SENSOR_ADDED": "Sensore aggiunto",
     "SENSOR_REMOVED": "Sensore rimosso", "EMAIL_ERROR": "Errore email",
     "ARCHIVE": "Archiviazione", "CONFIG": "Configurazione",
+    "GATEWAY_OFFLINE_OPEN": "Gateway non raggiungibile",
+    "GATEWAY_OFFLINE_CLOSE": "Gateway di nuovo raggiungibile", "SENSOR_MOVED": "Sensore spostato",
 }
 EVENT_TONE = {"TEMP_OPEN": "alarm", "EMAIL_ERROR": "alarm", "OFFLINE_OPEN": "offline",
               "BATTERY_OPEN": "warn", "TEMP_CLOSE": "ok", "OFFLINE_CLOSE": "ok",
-              "BATTERY_CLOSE": "ok"}
+              "BATTERY_CLOSE": "ok", "GATEWAY_OFFLINE_OPEN": "offline",
+              "GATEWAY_OFFLINE_CLOSE": "ok"}
 
 
 def num(v, digits: int = 1) -> str:
