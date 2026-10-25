@@ -303,3 +303,57 @@ def test_gateway_unknown_404(admin, app, tmp_path):
     form = {"ip": "192.168.1.61", "port": "6638", "adapter": "ember", "channel": "11"}
     assert admin.post("/impostazioni/gateway/9", data=form).status_code == 404
     assert admin.post("/impostazioni/gateway/9/prova").status_code == 404
+
+
+def _live_mqtt(app, tmp_path):
+    from app.mqtt import MqttService
+    _gateways_json(app, tmp_path)
+    m = MqttService(app.state.db, "localhost", gateways=app.state.gateways)
+    m.connected, m.sent = True, []
+    m.publish = lambda topic, data: m.sent.append((topic, data)) or True
+    m.stop = lambda: None
+    app.state.mqtt = m
+    return m
+
+
+def test_pair_on_selected_gateway(admin, app, tmp_path):
+    m = _live_mqtt(app, tmp_path)
+    html = admin.get("/impostazioni/sensori").text
+    assert 'name="gateway_id"' in html and "Ambulatorio" in html
+    r = admin.post("/impostazioni/sensori/abbina", data={"gateway_id": "2"})
+    assert m.sent == [("zigbee2mqtt_2/bridge/request/permit_join", {"time": 120})]
+    assert m.states[2].permit_join_until > 0 and m.states[1].permit_join_until == 0
+    assert "Ambulatorio" in r.text
+
+
+def test_pair_single_gateway_hides_select(admin, app):
+    html = admin.get("/impostazioni/sensori").text
+    assert 'id="pair-gw"' not in html
+    assert "Ambiente" not in html
+
+
+def test_pair_unknown_gateway(admin, app, tmp_path):
+    m = _live_mqtt(app, tmp_path)
+    r = admin.post("/impostazioni/sensori/abbina", data={"gateway_id": "9"})
+    assert r.status_code == 200
+    assert m.sent == []
+    assert 'class="flash flash-alarm"' in r.text and "Gateway non trovato" in r.text
+
+
+def test_add_inherits_gateway(admin, app, tmp_path):
+    _live_mqtt(app, tmp_path)
+    app.state.db.execute("INSERT INTO discovered(ieee, friendly_name, model, first_seen, "
+                         "last_temp, gateway_id) VALUES('0x09','0x09','SNZB-02LD',"
+                         "'2026-10-25T10:00:00+00:00',4.0,2)")
+    admin.post("/impostazioni/sensori/aggiungi", data={
+        "ieee": "0x09", "name": "Frigo C", "kind": "fridge", "min_c": "2", "max_c": "8"})
+    s = app.state.db.one("SELECT gateway_id FROM sensors WHERE ieee='0x09'")
+    assert s["gateway_id"] == 2
+
+
+def test_remove_uses_sensor_gateway(admin, app, tmp_path):
+    m = _live_mqtt(app, tmp_path)
+    add_sensor(app.state.db, ieee="0x02", name="Frigo B", gateway_id=2)
+    admin.post("/impostazioni/sensori/0x02/rimuovi")
+    assert m.sent == [("zigbee2mqtt_2/bridge/request/device/remove",
+                       {"id": "0x02", "force": True})]

@@ -12,7 +12,7 @@
   </div>
   {% for s in sensors %}
   <div class="sensor-row">
-    <p class="meta">{{ s.ieee }} · ultima lettura {{ s.last_seen_at | ago(now) }}{% if s.last_battery is not none %} · batteria {{ s.last_battery }}%{% endif %}{% if s.muted_until %} · email in pausa fino al {{ s.muted_until | local }}{% endif %}</p>
+    <p class="meta">{% if multi %}{{ gw_names.get(s.gateway_id, "gateway " ~ s.gateway_id) }} · {% endif %}{{ s.ieee }} · ultima lettura {{ s.last_seen_at | ago(now) }}{% if s.last_battery is not none %} · batteria {{ s.last_battery }}%{% endif %}{% if s.muted_until %} · email in pausa fino al {{ s.muted_until | local }}{% endif %}</p>
     <form method="post" action="/impostazioni/sensori/{{ s.ieee | urlencode }}/modifica">
       <div class="grid">
         <div><label for="n-{{ s.ieee }}">Nome</label><input id="n-{{ s.ieee }}" name="name" required value="{{ s.name }}"></div>

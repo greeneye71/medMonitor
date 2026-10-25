@@ -83,9 +83,23 @@ def _discovered(request: Request) -> list[dict]:
         "WHERE s.ieee IS NULL ORDER BY d.first_seen DESC")
 
 
-def _pairing_left(request: Request) -> int:
+def _pairing(request: Request) -> dict:
+    """Open permit_join window, if any: {"left": seconds, "name": gateway name}."""
     mqtt = _mqtt(request)
-    return max(0, int(mqtt.state.permit_join_until - time.time())) if mqtt else 0
+    for gw in request.app.state.gateways if mqtt else []:
+        left = int(mqtt.states[gw.id].permit_join_until - time.time()) if gw.id in mqtt.states else 0
+        if left > 0:
+            return {"left": left, "name": gw.name}
+    return {"left": 0, "name": ""}
+
+
+def _sensor_ctx(request: Request) -> dict:
+    db, gws = request.app.state.db, request.app.state.gateways
+    pairing = _pairing(request)
+    return {"discovered": _discovered(request), "presets": settings.get(db, "presets"),
+            "pairing_left": pairing["left"], "pairing_name": pairing["name"],
+            "gateways": gws, "multi": len(gws) > 1,
+            "gw_names": {g.id: g.name for g in gws}}
 
 
 @router.get("/sensori")
@@ -94,24 +108,24 @@ def sensors_page(request: Request):
     return _page(request, "sensori", "sensors.html",
                  sensors=db.query("SELECT * FROM sensors WHERE active=1 "
                                   "ORDER BY name COLLATE NOCASE"),
-                 discovered=_discovered(request), presets=settings.get(db, "presets"),
-                 pairing_left=_pairing_left(request), mute_hours=MUTE_HOURS,
-                 now=utcnow())
+                 mute_hours=MUTE_HOURS, now=utcnow(), **_sensor_ctx(request))
 
 
 @router.get("/sensori/rilevati")
 def discovered_partial(request: Request):
-    db = request.app.state.db
-    return render(request, "settings/_discovered.html", discovered=_discovered(request),
-                  presets=settings.get(db, "presets"), pairing_left=_pairing_left(request))
+    return render(request, "settings/_discovered.html", **_sensor_ctx(request))
 
 
 @router.post("/sensori/abbina")
-def pair(request: Request):
-    mqtt = _mqtt(request)
-    if mqtt and mqtt.permit_join(mqtt.gateways[0].id, 120):
-        mqtt.state.permit_join_until = time.time() + 120
-        flash(request, "Abbinamento aperto per 2 minuti: premi il tasto sul sensore.")
+def pair(request: Request, gateway_id: int = Form(0)):
+    mqtt, gws = _mqtt(request), request.app.state.gateways
+    gw = gateways.by_id(gws, gateway_id) if gateway_id else gws[0]
+    if not gw:
+        flash(request, "Gateway non trovato: ricarica la pagina e riprova.", "alarm")
+    elif mqtt and mqtt.permit_join(gw.id, 120):
+        mqtt.states[gw.id].permit_join_until = time.time() + 120
+        where = f" su {gw.name}" if len(gws) > 1 else ""
+        flash(request, f"Abbinamento aperto{where} per 2 minuti: premi il tasto sul sensore.")
     else:
         flash(request, "Gateway non raggiungibile: impossibile avviare l'abbinamento.", "alarm")
     return _back("sensori")
@@ -133,12 +147,13 @@ def add_sensor(request: Request, ieee: str = Form(...), name: str = Form(""),
     now = utcnow()
     seen = found["last_seen"]                 # real time of last reading, not "now"
     db.execute(
-        "INSERT INTO sensors(ieee,name,kind,min_c,max_c,active,last_temp,last_seen_at,created_at) "
-        "VALUES(?,?,?,?,?,1,?,?,?) ON CONFLICT(ieee) DO UPDATE SET name=excluded.name, "
+        "INSERT INTO sensors(ieee,name,kind,min_c,max_c,active,last_temp,last_seen_at,created_at,"
+        "gateway_id) VALUES(?,?,?,?,?,1,?,?,?,?) ON CONFLICT(ieee) DO UPDATE SET name=excluded.name, "
         "kind=excluded.kind, min_c=excluded.min_c, max_c=excluded.max_c, active=1, "
         "muted_until=NULL, last_temp=COALESCE(excluded.last_temp, sensors.last_temp), "
-        "last_seen_at=COALESCE(excluded.last_seen_at, sensors.last_seen_at)",
-        (ieee, name, kind, th[0], th[1], found["last_temp"], seen, iso(now)))
+        "last_seen_at=COALESCE(excluded.last_seen_at, sensors.last_seen_at), "
+        "gateway_id=excluded.gateway_id",
+        (ieee, name, kind, th[0], th[1], found["last_temp"], seen, iso(now), found["gateway_id"]))
     db.add_event(now, ieee, "SENSOR_ADDED", f"Sensore «{name}» aggiunto ({th[0]} … {th[1]} °C)")
     flash(request, f"Sensore «{name}» aggiunto.")
     return _back("sensori")
@@ -192,7 +207,7 @@ def remove_sensor(request: Request, ieee: str):
         db.execute("DELETE FROM alert_state WHERE sensor_id=?", (ieee,))
         db.execute("DELETE FROM discovered WHERE ieee=?", (ieee,))
         if _mqtt(request):
-            _mqtt(request).remove_device(sensor["gateway_id"] or 1, ieee)
+            _mqtt(request).remove_device(sensor["gateway_id"], ieee)
         db.add_event(utcnow(), ieee, "SENSOR_REMOVED", f"Sensore «{sensor['name']}» rimosso")
         flash(request, f"Sensore «{sensor['name']}» rimosso. Lo storico resta disponibile.")
     return _back("sensori")

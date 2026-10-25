@@ -1,11 +1,17 @@
 <div id="discovered" {% if pairing_left %}hx-get="/impostazioni/sensori/rilevati" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
   <div class="pairing">
     {% if pairing_left %}
-    <p><strong>Abbinamento aperto.</strong> Tieni premuto il tasto del sensore per 5 secondi finché il led lampeggia.</p>
+    <p><strong>Abbinamento aperto{% if multi %} su {{ pairing_name }}{% endif %}.</strong> Tieni premuto il tasto del sensore per 5 secondi finché il led lampeggia.</p>
     <p class="small muted">Tempo rimasto <span class="countdown" data-seconds="{{ pairing_left }}">{{ pairing_left }}</span> s</p>
     {% else %}
     <p>Per aggiungere un sensore avvia l'abbinamento, poi premi il tasto sul sensore entro 2 minuti.</p>
     <form method="post" action="/impostazioni/sensori/abbina" class="inline">
+      {% if multi %}
+      <label for="pair-gw">Ambiente<span class="hint">Il sensore resterà legato a questo gateway: per spostarlo va resettato e riabbinato</span></label>
+      <select id="pair-gw" name="gateway_id">
+        {% for g in gateways %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+      </select>
+      {% endif %}
       <button class="btn" type="submit">Avvia abbinamento</button>
     </form>
     {% endif %}
@@ -13,7 +19,7 @@
     {% for d in discovered %}
     <form class="discovered-item" method="post" action="/impostazioni/sensori/aggiungi">
       <input type="hidden" name="ieee" value="{{ d.ieee }}">
-      <p class="small muted">Rilevato {{ d.model or "sensore" }} · {{ d.ieee }}{% if d.last_temp is not none %} · {{ d.last_temp | num }} °C{% endif %}</p>
+      <p class="small muted">Rilevato {{ d.model or "sensore" }}{% if multi %} su {{ gw_names.get(d.gateway_id, "gateway " ~ d.gateway_id) }}{% endif %} · {{ d.ieee }}{% if d.last_temp is not none %} · {{ d.last_temp | num }} °C{% endif %}</p>
       <div class="grid">
         <div><label for="n-{{ d.ieee }}">Nome</label><input id="n-{{ d.ieee }}" name="name" required placeholder="Frigo farmaci" value=""></div>
         <div><label for="k-{{ d.ieee }}">Tipo</label>{% with id="k-" ~ d.ieee, selected="fridge" %}{% include "settings/_kind.html" %}{% endwith %}</div>
