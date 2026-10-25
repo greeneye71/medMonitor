@@ -281,3 +281,23 @@ def test_sensor_email_no_ambiente_with_one_gateway(db):
     gw_run(db, T0 + timedelta(minutes=1), states)
     gw_run(db, T0 + timedelta(minutes=11), states)
     assert outbox(db) and "(" not in outbox(db)[0]
+
+
+def test_notify_off_suppresses_emails_keeps_events(db):
+    setup_sensor(db)
+    db.execute("UPDATE sensors SET notify=0")
+    for i in range(3):
+        cycle(db, i, temp=12)
+    assert events(db) == ["TEMP_OPEN"] and outbox(db) == []
+    db.execute("UPDATE sensors SET notify=1")      # switched back on: alarm still open
+    cycle(db, 3, temp=12)
+    assert len(outbox(db)) == 1 and "ALLARME" in outbox(db)[0]
+
+
+def test_notify_off_sensor_not_in_gateway_alarm(db):
+    short_offline(db)
+    setup_sensor(db)
+    db.execute("UPDATE sensors SET notify=0")
+    states = {1: BridgeState(online=False, offline_since=T0)}
+    gw_run(db, T0 + timedelta(minutes=40), states)
+    assert "GATEWAY_OFFLINE_OPEN" not in events(db) and outbox(db) == []

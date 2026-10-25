@@ -58,4 +58,20 @@ def test_rename_atomic(tmp_path):
 
 
 def test_version():
-    assert app.__version__ == "2.1.0"
+    assert app.__version__ == "2.1.1"
+
+
+def test_load_duplicate_topic_falls_back(tmp_path, caplog):
+    write(tmp_path, {"gateways": [
+        {"id": 1, "name": "A", "base_topic": "zigbee2mqtt", "config": "/a.yaml"},
+        {"id": 2, "name": "B", "base_topic": "zigbee2mqtt", "config": "/b.yaml"}]})
+    with caplog.at_level("WARNING"):
+        gws = gateways.load(tmp_path, "/fallback.yaml")
+    assert [g.id for g in gws] == [1] and gws[0].config == "/fallback.yaml"
+    assert "non valido" in caplog.text
+
+
+def test_load_missing_no_warning(tmp_path, caplog):
+    with caplog.at_level("WARNING"):
+        gateways.load(tmp_path, "/fallback.yaml")
+    assert caplog.text == ""

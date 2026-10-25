@@ -58,6 +58,22 @@ def build_scheduler(app: FastAPI) -> BackgroundScheduler:
     return sch
 
 
+def _forget_removed_gateways(db: Database, gws) -> None:
+    """Drop state of gateways removed by install.sh, closing their open alarm first."""
+    ids = {g.id for g in gws}
+    marks = ",".join("?" * len(ids))
+    now = utcnow()
+    with db.transaction():
+        for r in db.query(f"SELECT * FROM gateway_state WHERE gateway_id NOT IN ({marks})",
+                          tuple(ids)):
+            if r["offline_open"]:
+                db.add_event(now, None, "GATEWAY_OFFLINE_CLOSE",
+                             f"Gateway {r['gateway_id']}: rimosso, allarme chiuso",
+                             gateway_id=r["gateway_id"])
+        db.execute(f"DELETE FROM gateway_state WHERE gateway_id NOT IN ({marks})", tuple(ids))
+        db.execute(f"DELETE FROM discovered WHERE gateway_id NOT IN ({marks})", tuple(ids))
+
+
 def create_app(data_dir: str | Path | None = None, start_services: bool = True,
                z2m_path: str | Path | None = None) -> FastAPI:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -91,6 +107,7 @@ def create_app(data_dir: str | Path | None = None, start_services: bool = True,
     app.state.data_dir = data_dir
     app.state.z2m_path = Path(z2m_path or os.environ.get("Z2M_CONFIG", "/z2m/configuration.yaml"))
     app.state.gateways = gateways.load(data_dir, app.state.z2m_path)
+    _forget_removed_gateways(db, app.state.gateways)
 
     app.add_middleware(SessionMiddleware,
                        secret_key=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
@@ -122,7 +139,9 @@ def create_app(data_dir: str | Path | None = None, start_services: bool = True,
             "db": db_ok,
             "mqtt_connected": bool(mqtt and mqtt.connected),
             # gateways without active sensors don't count: nothing depends on them
-            "gateway_online": bool(mqtt) and all(g["online"] for g in gws if g["sensors"]),
+            # (with no sensors at all, every gateway counts)
+            "gateway_online": bool(mqtt) and all(
+                g["online"] for g in gws if g["sensors"] or not any(x["sensors"] for x in gws)),
             "gateways": gws,
             "scheduler_running": bool(sch and sch.running),
             "outbox_pending": notifier.pending_count(db),

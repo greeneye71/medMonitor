@@ -20,7 +20,6 @@ class BridgeState:
     devices: dict[str, str] = field(default_factory=dict)   # friendly_name -> ieee
     models: dict[str, str] = field(default_factory=dict)    # ieee -> model
     permit_join_until: float = 0.0
-    online_since: datetime | None = None
     offline_since: datetime | None = None
 
 
@@ -32,8 +31,8 @@ def _ieee_for(state: BridgeState, name: str) -> str | None:
     return None
 
 
-def _seen_at(value, now: datetime) -> datetime:
-    """When the sensor really spoke: z2m `last_seen` (ISO_8601 or epoch ms), else `now`.
+def _seen_at(value, now: datetime) -> datetime | None:
+    """When the sensor really spoke: z2m `last_seen` (ISO_8601 or epoch ms), else None.
 
     z2m republishes its state cache at startup (cache_state_send_on_startup): without this,
     a sensor silent for days would look online with a stale temperature.
@@ -50,7 +49,7 @@ def _seen_at(value, now: datetime) -> datetime:
         except (OverflowError, OSError, ValueError):
             pass
     if seen is None:
-        return now
+        return None
     if seen.tzinfo is None:
         seen = seen.replace(tzinfo=timezone.utc)
     return min(seen.replace(microsecond=0), now)
@@ -88,13 +87,18 @@ def handle_message(db: Database, states: dict[int, BridgeState], gateways: list[
         except ValueError:
             value = text
         online = value == "online"
-        if state.online and not online:
-            state.offline_since = now
-        elif online and not state.online:
-            state.online_since = now
-            db.execute("INSERT INTO gateway_state(gateway_id, back_at) VALUES(?,?) "
-                       "ON CONFLICT(gateway_id) DO UPDATE SET back_at=excluded.back_at",
-                       (gid, iso(now)))
+        if not online:
+            if state.online or state.offline_since is None:
+                state.offline_since = now
+        elif not state.online:
+            # Only a real outage restarts the sensors' offline clock: the retained "online"
+            # received at startup must not hide sensors that are silent for other reasons.
+            row = db.one("SELECT offline_open FROM gateway_state WHERE gateway_id=?", (gid,))
+            if state.offline_since is not None or (row and row["offline_open"]):
+                db.execute("INSERT INTO gateway_state(gateway_id, back_at) VALUES(?,?) "
+                           "ON CONFLICT(gateway_id) DO UPDATE SET back_at=excluded.back_at",
+                           (gid, iso(now)))
+            state.offline_since = None
         state.online = online
         return
     if sub.startswith("bridge/"):
@@ -119,7 +123,10 @@ def handle_message(db: Database, states: dict[int, BridgeState], gateways: list[
                     "INSERT INTO discovered(ieee,friendly_name,model,first_seen,gateway_id) "
                     "VALUES(?,?,?,?,?) ON CONFLICT(ieee) DO UPDATE SET "
                     "friendly_name=excluded.friendly_name, model=excluded.model, "
-                    "gateway_id=excluded.gateway_id", (ieee, name, model, iso(now), gid))
+                    # a monitored sensor's gateway changes only with a real move (readings)
+                    "gateway_id=CASE WHEN EXISTS(SELECT 1 FROM sensors WHERE ieee=excluded.ieee "
+                    "AND active=1) THEN discovered.gateway_id ELSE excluded.gateway_id END",
+                    (ieee, name, model, iso(now), gid))
             state.devices, state.models = devices, models
         return
     if "/" in sub:                      # e.g. <name>/set, <name>/availability
@@ -140,7 +147,8 @@ def handle_message(db: Database, states: dict[int, BridgeState], gateways: list[
     battery = data.get("battery")
     ok = isinstance(battery, (int, float)) and not isinstance(battery, bool) and math.isfinite(battery)
     battery = int(battery) if ok else None
-    seen_dt = _seen_at(data.get("last_seen"), now)
+    real_seen = _seen_at(data.get("last_seen"), now)
+    seen_dt = real_seen or now
     seen = iso(seen_dt)
     sensor = db.one("SELECT name, gateway_id, last_seen_at FROM sensors WHERE ieee=? AND active=1",
                     (ieee,))
@@ -155,9 +163,9 @@ def handle_message(db: Database, states: dict[int, BridgeState], gateways: list[
     old_gid = sensor["gateway_id"]
     if old_gid != gid:
         # Another gateway's cached state (cache_state_send_on_startup) can be older than what
-        # we know: only a newer reading proves the sensor really moved.
+        # we know: only a newer reading, with its real last_seen, proves the sensor moved.
         last = parse(sensor["last_seen_at"])
-        if last is not None and seen_dt <= last:
+        if real_seen is None or (last is not None and real_seen <= last):
             return
         db.add_event(now, ieee, "SENSOR_MOVED", f"{sensor['name']}: da "
                      f"{_gw_name(gateways, old_gid)} a {_gw_name(gateways, gid)}")
@@ -213,6 +221,13 @@ class MqttService:
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties=None):
         self.connected = False
+        # Without the broker no bridge is reachable: the retained "online" on reconnect
+        # then counts as a return and restarts the sensors' offline clock.
+        with self._lock:
+            now = utcnow()
+            for st in self.states.values():
+                if st.online:
+                    st.online, st.offline_since = False, now
         log.warning("MQTT disconnesso: %s", reason_code)
 
     def _on_message(self, client, userdata, msg):

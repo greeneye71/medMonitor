@@ -67,7 +67,38 @@ def test_migrate_adds_gateway_id(tmp_path):
     assert db.one("SELECT gateway_id FROM discovered")["gateway_id"] == 1
     db.execute("INSERT INTO gateway_state(gateway_id) VALUES(2)")
     g = db.one("SELECT * FROM gateway_state")
-    assert g["offline_open"] == 0 and g["email_sent"] == 0 and g["back_at"] is None
+    assert g["offline_open"] == 0 and g["back_at"] is None
+    assert db.one("SELECT notify FROM sensors")["notify"] == 1
+
+
+V20_EVENTS = """
+CREATE TABLE sensors(ieee TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT, min_c REAL NOT NULL,
+    max_c REAL NOT NULL, active INTEGER DEFAULT 1, muted_until TEXT, last_temp REAL,
+    last_battery INTEGER, last_seen_at TEXT, created_at TEXT, gateway_id INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, sensor_id TEXT,
+    type TEXT NOT NULL, message TEXT NOT NULL, value REAL);
+CREATE TABLE alert_state(sensor_id TEXT PRIMARY KEY, consecutive_out INTEGER DEFAULT 0,
+    temp_open INTEGER DEFAULT 0, temp_since TEXT, offline_open INTEGER DEFAULT 0,
+    battery_open INTEGER DEFAULT 0, mute_pending INTEGER DEFAULT 0);
+INSERT INTO sensors(ieee,name,kind,min_c,max_c,gateway_id) VALUES('0x01','Frigo','fridge',2,8,2);
+INSERT INTO events(ts,sensor_id,type,message,value) VALUES('t',NULL,'GATEWAY_OFFLINE_OPEN','g',2);
+INSERT INTO events(ts,sensor_id,type,message,value) VALUES('t','0x01','TEMP_OPEN','f',9.5);
+INSERT INTO alert_state(sensor_id, offline_open) VALUES('0x01', 1);
+"""
+
+
+def test_migrate_backfills_event_gateway_and_offline_email(tmp_path):
+    import sqlite3
+    from app.db import Database
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.executescript(V20_EVENTS)
+    con.close()
+    db = Database(path)
+    ev = db.query("SELECT type, value, gateway_id FROM events ORDER BY id")
+    assert [(e["type"], e["value"], e["gateway_id"]) for e in ev] == [
+        ("GATEWAY_OFFLINE_OPEN", None, 2), ("TEMP_OPEN", 9.5, 2)]
+    assert db.one("SELECT offline_email FROM alert_state")["offline_email"] == 1
 
 
 def test_migrate_idempotent(tmp_path):

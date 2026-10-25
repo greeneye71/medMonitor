@@ -22,7 +22,11 @@ def is_offline(sensor: dict, now: datetime, offline_minutes: int,
 
 
 def take_samples(db: Database, now: datetime) -> dict[str, float]:
-    """Write one sample per online active sensor. Returns {ieee: temp} of sampled sensors."""
+    """Write one sample per online active sensor. Returns {ieee: temp} of sampled sensors.
+
+    No gateway `back_at` grace here: a reading older than `offline_minutes` is stale and
+    must not become a sample, even while the offline alarm waits for the sensor to speak.
+    """
     offline_min = int(settings.get(db, "alarm")["offline_minutes"])
     sampled = {}
     for s in db.query("SELECT * FROM sensors WHERE active=1"):
@@ -48,6 +52,9 @@ def _save_state(db: Database, st: dict) -> None:
 
 
 def _muted(s: dict, now: datetime) -> bool:
+    """Emails suppressed: switched off for the sensor or paused until `muted_until`."""
+    if not s.get("notify", 1):
+        return True
     until = parse(s["muted_until"])
     return until is not None and until > now
 
@@ -83,18 +90,19 @@ def evaluate_gateways(db: Database, now: datetime, gateways, states, connected: 
                 if not sensors:
                     continue
                 db.add_event(now, None, "GATEWAY_OFFLINE_OPEN",
-                             f"{g.name}: gateway non raggiungibile da oltre {offline_min} min", g.id)
+                             f"{g.name}: gateway non raggiungibile da oltre {offline_min} min",
+                             gateway_id=g.id)
                 notify(db, now, "gateway_offline_open", gateway=g,
                        sensors=[s["name"] for s in sensors], minutes=offline_min)
-                db.execute("UPDATE gateway_state SET offline_open=1, offline_since=?, "
-                           "email_sent=1 WHERE gateway_id=?", (iso(since), g.id))
+                db.execute("UPDATE gateway_state SET offline_open=1, offline_since=? "
+                           "WHERE gateway_id=?", (iso(since), g.id))
             elif bs.online and gst["offline_open"]:
+                # The alarm only opens together with its email: the closing one always follows.
                 db.add_event(now, None, "GATEWAY_OFFLINE_CLOSE",
-                             f"{g.name}: gateway di nuovo raggiungibile", g.id)
-                if gst["email_sent"]:
-                    notify(db, now, "gateway_offline_close", gateway=g, minutes=offline_min)
-                db.execute("UPDATE gateway_state SET offline_open=0, offline_since=NULL, "
-                           "email_sent=0 WHERE gateway_id=?", (g.id,))
+                             f"{g.name}: gateway di nuovo raggiungibile", gateway_id=g.id)
+                notify(db, now, "gateway_offline_close", gateway=g, minutes=offline_min)
+                db.execute("UPDATE gateway_state SET offline_open=0, offline_since=NULL "
+                           "WHERE gateway_id=?", (g.id,))
     return down
 
 
@@ -222,9 +230,10 @@ def run_cycle(db: Database, now: datetime, gateways=None, states=None, connected
     evaluate(db, now, sampled, down, back_at, ambienti)
 
 
-def sensor_status(sensor: dict, st: dict | None, now: datetime, offline_minutes: int) -> str:
-    """UI status: offline | alarm | out | battery | ok."""
-    if is_offline(sensor, now, offline_minutes):
+def sensor_status(sensor: dict, st: dict | None, now: datetime, offline_minutes: int,
+                  back_at: datetime | None = None) -> str:
+    """UI status: offline | alarm | out | battery | ok. `back_at` as in `is_offline`."""
+    if is_offline(sensor, now, offline_minutes, back_at):
         return "offline"
     st = st or {}
     if st.get("temp_open"):

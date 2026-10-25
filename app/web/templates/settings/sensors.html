@@ -12,7 +12,7 @@
   </div>
   {% for s in sensors %}
   <div class="sensor-row">
-    <p class="meta">{% if multi %}{{ gw_names.get(s.gateway_id, "gateway " ~ s.gateway_id) }} · {% endif %}{{ s.ieee }} · ultima lettura {{ s.last_seen_at | ago(now) }}{% if s.last_battery is not none %} · batteria {{ s.last_battery }}%{% endif %}{% if s.muted_until %} · email in pausa fino al {{ s.muted_until | local }}{% endif %}</p>
+    <p class="meta">{% if multi %}{{ gw_names.get(s.gateway_id, "gateway " ~ s.gateway_id) }} · {% endif %}{{ s.ieee }} · ultima lettura {{ s.last_seen_at | ago(now) }}{% if s.last_battery is not none %} · batteria {{ s.last_battery }}%{% endif %}{% if not s.notify %} · email disattivate{% elif s.muted_until %} · email in pausa fino al {{ s.muted_until | local }}{% endif %}</p>
     <form method="post" action="/impostazioni/sensori/{{ s.ieee | urlencode }}/modifica">
       <div class="grid">
         <div><label for="n-{{ s.ieee }}">Nome</label><input id="n-{{ s.ieee }}" name="name" required value="{{ s.name }}"></div>
@@ -23,6 +23,15 @@
       </div>
     </form>
     <div class="sensor-tools">
+      <form method="post" action="/impostazioni/sensori/{{ s.ieee | urlencode }}/email" class="inline">
+        <label class="switch" title="Invio email di allarme per questo sensore">
+          <input type="checkbox" name="notify" value="1" {% if s.notify %}checked{% endif %}
+                 onchange="this.form.submit()">
+          <span class="switch-track" aria-hidden="true"></span>
+          <span>Email</span>
+        </label>
+        <noscript><button class="btn btn-ghost btn-small" type="submit">Applica</button></noscript>
+      </form>
       <form method="post" action="/impostazioni/sensori/{{ s.ieee | urlencode }}/silenzia" class="inline">
         <label class="visually-hidden" for="h-{{ s.ieee }}">Pausa email</label>
         <select id="h-{{ s.ieee }}" name="hours">

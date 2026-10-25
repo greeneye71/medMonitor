@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.1.1 — Email per sensore e correzioni
+- Impostazioni → Sensori: interruttore **Email** per ogni sensore, spegne le email di quel sensore
+  senza limite di tempo (eventi e allarmi restano registrati).
+- Gli eventi dei gateway salvano l'ambiente in una colonna dedicata (migrazione automatica).
+- Il ritorno del gateway azzera il conteggio offline dei sensori solo dopo un guasto vero,
+  non al riavvio di medMonitor; anche una disconnessione da mosquitto conta come guasto.
+- Spostamento di un sensore tra gateway solo con una lettura nuova (con `last_seen`), non con lo stato in cache.
+- Email "sensore di nuovo raggiungibile" solo se era partita quella di guasto; email di rientro gateway sempre.
+- Allarme gateway non aperto se tutti i suoi sensori hanno le email in pausa o spente.
+- All'avvio vengono chiusi gli allarmi e rimossi i dati dei gateway tolti con `install.sh`.
+- `gateways.json` con `base_topic` duplicati o non valido: avviso nel log e ripiego sul solo gateway 1.
+- Modifica gateway: se la configurazione zigbee2mqtt non si scrive, il nome non viene cambiato.
+- `/health` senza sensori considera tutti i gateway.
+- `install.sh`: la porta del nuovo gateway salta anche quelle già occupate da altri programmi.
+
 ## v2.1.0 — Più gateway (uno per ambiente)
 - Un gateway SONOFF Dongle-M per ogni ambiente, tutti nella stessa medMonitor. Registro in
   `~/medmonitor-data/app/gateways.json`; ogni gateway ha il suo container `zigbee2mqtt-N`, la sua rete Zigbee e il suo canale.

@@ -378,8 +378,10 @@ def test_events_labels(client, app):
     _two_gateways(app)
     db = app.state.db
     add_sensor(db, ieee="0x02", name="Frigo B", gateway_id=2)
-    db.add_event(utcnow(), None, "GATEWAY_OFFLINE_OPEN", "Ambulatorio: gateway non raggiungibile", 2)
-    db.add_event(utcnow(), None, "GATEWAY_OFFLINE_CLOSE", "Ambulatorio: gateway di nuovo raggiungibile", 2)
+    db.add_event(utcnow(), None, "GATEWAY_OFFLINE_OPEN", "Ambulatorio: gateway non raggiungibile",
+                 gateway_id=2)
+    db.add_event(utcnow(), None, "GATEWAY_OFFLINE_CLOSE", "Ambulatorio: gateway di nuovo raggiungibile",
+                 gateway_id=2)
     db.add_event(utcnow(), "0x02", "SENSOR_MOVED", "Frigo B: da Ambiente 1 a Ambulatorio")
     html = client.get("/eventi").text
     for label in ("Gateway non raggiungibile", "Gateway di nuovo raggiungibile", "Sensore spostato"):
@@ -391,3 +393,67 @@ def test_events_labels(client, app):
 def test_events_single_gateway_no_column(client, app):
     add_sensor(app.state.db)
     assert "<th>Ambiente</th>" not in client.get("/eventi").text
+
+
+def test_sensor_email_switch(admin, app):
+    db = app.state.db
+    add_sensor(db)
+    html = admin.get("/impostazioni/sensori").text
+    assert 'class="switch"' in html and 'action="/impostazioni/sensori/0x01/email"' in html
+    r = admin.post("/impostazioni/sensori/0x01/email", data={}, follow_redirects=False)
+    assert r.status_code == 303
+    assert db.one("SELECT notify FROM sensors")["notify"] == 0
+    assert "email disattivate" in admin.get("/impostazioni/sensori").text
+    admin.post("/impostazioni/sensori/0x01/email", data={"notify": "1"})
+    assert db.one("SELECT notify FROM sensors")["notify"] == 1
+    msgs = [e["message"] for e in db.query("SELECT message FROM events WHERE type='MUTE' "
+                                           "ORDER BY id")]
+    assert msgs == ["Email disattivate per «Frigo 1»", "Email riattivate per «Frigo 1»"]
+
+
+def test_health_no_sensors_counts_all_gateways(client, app):
+    _two_gateways(app, online2=False)
+    assert client.get("/health").json()["gateway_online"] is False
+    _two_gateways(app, online2=True)
+    assert client.get("/health").json()["gateway_online"] is True
+
+
+def test_startup_forgets_removed_gateways(tmp_path):
+    import json
+
+    from app.db import Database
+    (tmp_path / "gateways.json").write_text(json.dumps({"gateways": [
+        {"id": 1, "name": "Ambiente 1", "base_topic": "zigbee2mqtt",
+         "config": str(tmp_path / "z1.yaml"), "frontend_port": 8080}]}), encoding="utf-8")
+    db = Database(tmp_path / "medmonitor.db")
+    db.execute("INSERT INTO gateway_state(gateway_id, offline_open) VALUES(3, 1)")
+    db.execute("INSERT INTO gateway_state(gateway_id) VALUES(1)")
+    db.execute("INSERT INTO discovered(ieee, friendly_name, gateway_id) VALUES('0x09','x',3)")
+    db.close()
+    a = create_app(tmp_path, start_services=False, z2m_path=tmp_path / "configuration.yaml")
+    db = a.state.db
+    assert [r["gateway_id"] for r in db.query("SELECT gateway_id FROM gateway_state")] == [1]
+    assert db.query("SELECT * FROM discovered") == []
+    ev = db.one("SELECT * FROM events WHERE type='GATEWAY_OFFLINE_CLOSE'")
+    assert ev["gateway_id"] == 3 and "rimosso" in ev["message"]
+
+
+def test_gateway_edit_failed_write_keeps_name(admin, app, tmp_path, monitor_patch=None):
+    import json
+
+    from app import z2m_config
+    _gateways_json(app, tmp_path)
+
+    def fail(*a, **k):
+        raise OSError("disco pieno")
+    orig = z2m_config.write_gateway
+    z2m_config.write_gateway = fail
+    try:
+        admin.post("/impostazioni/gateway/2", data={
+            "name": "Laboratorio", "ip": "192.168.1.61", "port": "6638", "adapter": "ember",
+            "channel": "15"})
+    finally:
+        z2m_config.write_gateway = orig
+    saved = json.loads((tmp_path / "gateways.json").read_text(encoding="utf-8"))
+    assert [g["name"] for g in saved["gateways"]] == ["Ambiente 1", "Ambulatorio"]
+    assert app.state.gateways[1].name == "Ambulatorio"

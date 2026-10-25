@@ -14,18 +14,19 @@ CREATE TABLE IF NOT EXISTS sensors(
     kind TEXT CHECK(kind IN ('fridge','freezer')),
     min_c REAL NOT NULL, max_c REAL NOT NULL, active INTEGER DEFAULT 1,
     muted_until TEXT, last_temp REAL, last_battery INTEGER, last_seen_at TEXT,
-    created_at TEXT, gateway_id INTEGER NOT NULL DEFAULT 1);
+    created_at TEXT, gateway_id INTEGER NOT NULL DEFAULT 1, notify INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS samples(sensor_id TEXT, ts TEXT, temp_c REAL, battery INTEGER);
 CREATE INDEX IF NOT EXISTS idx_samples ON samples(sensor_id, ts);
 CREATE INDEX IF NOT EXISTS idx_samples_ts ON samples(ts);
 CREATE TABLE IF NOT EXISTS events(
-    id INTEGER PRIMARY KEY, ts TEXT, sensor_id TEXT, type TEXT, message TEXT, value REAL);
+    id INTEGER PRIMARY KEY, ts TEXT, sensor_id TEXT, type TEXT, message TEXT, value REAL,
+    gateway_id INTEGER);
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
 CREATE TABLE IF NOT EXISTS alert_state(
     sensor_id TEXT PRIMARY KEY, consecutive_out INTEGER DEFAULT 0,
     temp_open INTEGER DEFAULT 0, temp_since TEXT,
     offline_open INTEGER DEFAULT 0, battery_open INTEGER DEFAULT 0,
-    mute_pending INTEGER DEFAULT 0);
+    mute_pending INTEGER DEFAULT 0, offline_email INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS outbox(
     id INTEGER PRIMARY KEY, created_at TEXT, subject TEXT, body_text TEXT, body_html TEXT,
     attempts INTEGER DEFAULT 0, last_error TEXT, last_attempt_at TEXT, sent_at TEXT);
@@ -34,7 +35,7 @@ CREATE TABLE IF NOT EXISTS discovered(
     last_seen TEXT, gateway_id INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS gateway_state(
     gateway_id INTEGER PRIMARY KEY, offline_open INTEGER DEFAULT 0, offline_since TEXT,
-    back_at TEXT, email_sent INTEGER DEFAULT 0);
+    back_at TEXT);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
 """
 
@@ -79,11 +80,27 @@ class Database:
         added = [("discovered", "last_seen", "TEXT"),
                  ("sensors", "gateway_id", "INTEGER NOT NULL DEFAULT 1"),
                  ("discovered", "gateway_id", "INTEGER NOT NULL DEFAULT 1"),
-                 ("alert_state", "offline_email", "INTEGER DEFAULT 0")]
+                 ("alert_state", "offline_email", "INTEGER DEFAULT 0"),
+                 ("sensors", "notify", "INTEGER NOT NULL DEFAULT 1"),
+                 ("events", "gateway_id", "INTEGER")]
+        # Backfill for data written before the column existed.
+        backfill = {
+            # v2.0 always emailed an open offline alarm: its "di nuovo online" must follow.
+            ("alert_state", "offline_email"):
+                ["UPDATE alert_state SET offline_email=1 WHERE offline_open=1"],
+            # Gateway events kept the gateway id in `value`; sensor events take the sensor's.
+            ("events", "gateway_id"):
+                ["UPDATE events SET gateway_id=CAST(value AS INTEGER), value=NULL "
+                 "WHERE type LIKE 'GATEWAY%' AND value IS NOT NULL",
+                 "UPDATE events SET gateway_id=(SELECT gateway_id FROM sensors "
+                 "WHERE ieee=events.sensor_id) WHERE sensor_id IS NOT NULL"],
+        }
         for table, col, decl in added:
             cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if col not in cols:
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+                for sql in backfill.get((table, col), []):
+                    self.conn.execute(sql)
 
     def execute(self, sql: str, params=()) -> sqlite3.Cursor:
         with self.lock:
@@ -98,9 +115,13 @@ class Database:
         return rows[0] if rows else None
 
     def add_event(self, now: datetime, sensor_id: str | None, type_: str,
-                  message: str, value: float | None = None) -> None:
-        self.execute("INSERT INTO events(ts,sensor_id,type,message,value) VALUES(?,?,?,?,?)",
-                     (iso(now), sensor_id, type_, message, value))
+                  message: str, value: float | None = None,
+                  gateway_id: int | None = None) -> None:
+        """Log an event; a sensor event without `gateway_id` takes the sensor's gateway."""
+        self.execute(
+            "INSERT INTO events(ts,sensor_id,type,message,value,gateway_id) VALUES(?,?,?,?,?,"
+            "COALESCE(?, (SELECT gateway_id FROM sensors WHERE ieee=?)))",
+            (iso(now), sensor_id, type_, message, value, gateway_id, sensor_id))
 
     @contextmanager
     def transaction(self):

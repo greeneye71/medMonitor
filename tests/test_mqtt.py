@@ -191,7 +191,8 @@ def _move(db, sts, moved):
     add_sensor(db, ieee="0x01", name="Frigo 1", last_temp=5.0,
                last_seen_at="2026-10-13T10:00:00+00:00", gateway_id=1)
     now = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
-    msg(db, sts, "0x01", {"temperature": 4.0}, gws=GW2, base="zigbee2mqtt_2", now=now,
+    msg(db, sts, "0x01", {"temperature": 4.0, "last_seen": "2026-10-13T12:00:00Z"},
+        gws=GW2, base="zigbee2mqtt_2", now=now,
         on_moved=lambda old, ieee: moved.append((old, ieee)))
 
 
@@ -226,6 +227,47 @@ def test_back_at_written(db):
     msg(db, sts, "bridge/state", b"offline", gws=GW2, base="zigbee2mqtt_2", now=t0)
     assert sts[2].offline_since == t0
     msg(db, sts, "bridge/state", b"online", gws=GW2, base="zigbee2mqtt_2", now=t1)
-    assert sts[2].online_since == t1
+    assert sts[2].offline_since is None
     row = db.one("SELECT back_at FROM gateway_state WHERE gateway_id=2")
     assert row["back_at"] == "2026-10-13T12:07:00+00:00"
+
+
+def test_startup_online_keeps_offline_clock(db):
+    sts = states2()
+    msg(db, sts, "bridge/state", b"online", gws=GW2, base="zigbee2mqtt_2")
+    assert db.one("SELECT back_at FROM gateway_state WHERE gateway_id=2") is None
+
+
+def test_online_after_open_alarm_writes_back_at(db):
+    # alarm opened before a restart: the first "online" is a real return
+    db.execute("INSERT INTO gateway_state(gateway_id, offline_open) VALUES(2, 1)")
+    sts = states2()
+    msg(db, sts, "bridge/state", b"online", gws=GW2, base="zigbee2mqtt_2")
+    assert db.one("SELECT back_at FROM gateway_state WHERE gateway_id=2")["back_at"]
+
+
+def test_move_needs_real_last_seen(db):
+    sts, moved = states2(), []
+    add_sensor(db, ieee="0x01", last_temp=5.0, last_seen_at="2026-10-13T10:00:00+00:00",
+               gateway_id=1)
+    msg(db, sts, "0x01", {"temperature": 4.0}, gws=GW2, base="zigbee2mqtt_2",
+        on_moved=lambda old, ieee: moved.append((old, ieee)))
+    assert db.one("SELECT gateway_id FROM sensors")["gateway_id"] == 1 and moved == []
+
+
+def test_devices_list_keeps_monitored_sensor_gateway(db):
+    sts = states2()
+    add_sensor(db, ieee="0x01", gateway_id=1)
+    msg(db, sts, "bridge/devices", DEVICES)
+    msg(db, sts, "bridge/devices", DEVICES, gws=GW2, base="zigbee2mqtt_2")
+    rows = {r["ieee"]: r["gateway_id"] for r in db.query("SELECT * FROM discovered")}
+    assert rows == {"0x01": 1, "0x02": 2}
+
+
+def test_disconnect_marks_bridges_offline(db):
+    from app.mqtt import MqttService
+    m = MqttService(db, "localhost", gateways=GW2)
+    m.states[1].online = True
+    m._on_disconnect(None, None, None, "x")
+    assert not m.states[1].online and m.states[1].offline_since is not None
+    assert m.states[2].offline_since is None

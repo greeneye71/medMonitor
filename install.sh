@@ -33,7 +33,7 @@ ok "Fedora, podman $(podman --version | awk '{print $3}')"
 # Gateway 1: zigbee2mqtt / z2m / porta 8080. Gateway n>=2: zigbee2mqtt-n / z2m-n / zigbee2mqtt_n.
 reg() {
     python3 - "$REGISTRY" "$DATA_DIR" "$DB_FILE" "${UI_PORT:-0}" "$@" <<'PY'
-import glob, json, os, re, sqlite3, sys
+import glob, json, os, re, socket, sqlite3, sys
 path, data_dir, db_file, ui_port, cmd, *args = sys.argv[1:]
 
 def load():
@@ -98,7 +98,13 @@ elif cmd == "add":                      # add <name>  -> prints "id port channel
     gid = max([raw.get("next_id", 2), *(g["id"] + 1 for g in gws), *(r + 1 for r in removed)])
     used = {g.get("frontend_port", 8080) for g in gws} | {int(ui_port), 8000, 1883}
     port = 8079 + gid
-    while port in used:
+    def busy(port):                     # already taken by another program on this host
+        try:
+            socket.create_connection(("127.0.0.1", port), 0.3).close()
+            return True
+        except OSError:
+            return False
+    while port in used or busy(port):
         port += 1
     channels = {conf_value(g["id"], "channel") for g in gws}
     channel = next((c for c in (11, 15, 20, 25) if str(c) not in channels), 26)

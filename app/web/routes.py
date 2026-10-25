@@ -62,6 +62,7 @@ def overview_context(request: Request) -> dict:
     offline_min = int(settings.get(db, "alarm")["offline_minutes"])
     start = now - timedelta(hours=24)
     states = {r["sensor_id"]: r for r in db.query("SELECT * FROM alert_state")}
+    gw_rows = {r["gateway_id"]: r for r in db.query("SELECT * FROM gateway_state")}
     cards = []
     for s in db.query("SELECT * FROM sensors WHERE active=1 ORDER BY name COLLATE NOCASE"):
         st = states.get(s["ieee"])
@@ -70,7 +71,8 @@ def overview_context(request: Request) -> dict:
         muted_until = parse(s["muted_until"])
         cards.append({
             **s,
-            "status": sensor_status(s, st, now, offline_min),
+            "status": sensor_status(s, st, now, offline_min,
+                                    parse((gw_rows.get(s["gateway_id"]) or {}).get("back_at"))),
             "battery_low": bool(st and st["battery_open"]),
             "muted_until": muted_until if muted_until and muted_until > now else None,
             "pos": range_position(s["last_temp"], s["min_c"], s["max_c"]),
@@ -84,7 +86,10 @@ def overview_context(request: Request) -> dict:
     for i, g in enumerate(gateways):
         bs = mqtt.states.get(g.id) if mqtt is not None else None
         online = mqtt is None or bool(mqtt.connected and bs is not None and bs.online)
-        since = (bs.offline_since if bs is not None else None) or             (mqtt.started_at if mqtt is not None else None)
+        # Outage start: the open alarm's (survives restarts), else what this process saw.
+        since = (parse((gw_rows.get(g.id) or {}).get("offline_since"))
+                 or (bs.offline_since if bs is not None else None)
+                 or (mqtt.started_at if mqtt is not None else None))
         down_minutes = int((now - since).total_seconds() // 60) if not online and since else None
         # Sensors of a gateway no longer configured are shown with the first one.
         sec_cards = [c for c in cards
@@ -243,8 +248,7 @@ def events(request: Request, sensor: str = "", type: str = "", page: int = 1):  
     pages = max(1, -(-total // PAGE_SIZE))
     page = min(max(1, page), pages)
     rows = db.query(
-        f"SELECT e.*, s.name AS sensor_name, COALESCE(s.gateway_id, CASE WHEN e.type "
-        f"LIKE 'GATEWAY%' THEN CAST(e.value AS INTEGER) END) AS gw_id FROM events e "
+        f"SELECT e.*, s.name AS sensor_name, e.gateway_id AS gw_id FROM events e "
         f"LEFT JOIN sensors s "
         f"ON s.ieee=e.sensor_id {sql_where} ORDER BY e.id DESC LIMIT ? OFFSET ?",
         params + [PAGE_SIZE, (page - 1) * PAGE_SIZE])

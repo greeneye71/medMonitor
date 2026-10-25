@@ -1,10 +1,13 @@
 """Gateway registry: DATA_DIR/gateways.json, written by install.sh (the app only renames)."""
 import json
+import logging
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 FILE = "gateways.json"
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -34,15 +37,21 @@ def _parse(raw) -> list[Gateway]:
                            int(it.get("frontend_port", 8080))))
     if len({g.id for g in gws}) != len(gws):
         raise ValueError("duplicate id")
+    if len({g.base_topic for g in gws}) != len(gws):
+        raise ValueError("duplicate base_topic")
     return sorted(gws, key=lambda g: g.id)
 
 
 def load(data_dir, fallback_config) -> list[Gateway]:
+    path = Path(data_dir) / FILE
+    fallback = [Gateway(1, "Gateway 1", "zigbee2mqtt", str(fallback_config), 8080)]
+    if not path.exists():               # single gateway installed before v2.1
+        return fallback
     try:
-        raw = json.loads((Path(data_dir) / FILE).read_text(encoding="utf-8"))
-        return _parse(raw)
-    except (OSError, ValueError, KeyError, TypeError):
-        return [Gateway(1, "Gateway 1", "zigbee2mqtt", str(fallback_config), 8080)]
+        return _parse(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        log.warning("%s non valido (%s): uso il solo gateway 1", path, exc)
+        return fallback
 
 
 def by_id(gateways, gid) -> Gateway | None:

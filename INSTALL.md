@@ -199,7 +199,7 @@ successivo multiplo di 10 minuti (:00, :10, :20…).
 | Temperatura | N campioni consecutivi fuori soglia (default 2, uno ogni 10 min) | primo campione in soglia (email di rientro) |
 | Sensore offline | nessun dato da X minuti (default 120) | nuovo dato ricevuto (email) |
 | Batteria scarica | sotto Y% (default 20) | sopra Y+5% (nessuna email) |
-| Gateway non raggiungibile | gateway non in linea da X minuti e con almeno un sensore attivo | gateway di nuovo in linea (email) |
+| Gateway non raggiungibile | gateway non in linea da X minuti e con almeno un sensore attivo con email attive | gateway di nuovo in linea (email) |
 
 Quando un gateway non risponde non partono le email "sensore non risponde" dei suoi sensori:
 arriva solo quella del gateway. Al ritorno il conteggio offline dei suoi sensori riparte da zero.
@@ -207,6 +207,9 @@ Con più gateway oggetto e corpo delle email indicano l'ambiente.
 
 Un allarme aperto non manda altre email finché non si chiude. "Metti in pausa le email" (per qualche ora)
 registra gli eventi ma non manda email; allo scadere, se l'allarme è ancora aperto, l'email parte.
+L'interruttore **Email** di ogni sensore in *Impostazioni → Sensori* spegne le email di quel sensore
+a tempo indeterminato (per esempio un frigo fuori uso): allarmi ed eventi restano registrati e
+la Panoramica li mostra; riaccendendolo, un allarme ancora aperto manda la sua email.
 Valori modificabili in *Impostazioni → Allarmi*.
 
 ---

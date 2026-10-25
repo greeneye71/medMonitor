@@ -198,6 +198,19 @@ def mute_sensor(request: Request, ieee: str, hours: int = Form(0)):
     return _back("sensori")
 
 
+@router.post("/sensori/{ieee}/email")
+def sensor_email(request: Request, ieee: str, notify: str = Form("")):
+    db = request.app.state.db
+    sensor = db.one("SELECT * FROM sensors WHERE ieee=?", (ieee,))
+    if sensor:
+        on = notify == "1"
+        db.execute("UPDATE sensors SET notify=? WHERE ieee=?", (int(on), ieee))
+        msg = "Email riattivate" if on else "Email disattivate"
+        db.add_event(utcnow(), ieee, "MUTE", f"{msg} per «{sensor['name']}»")
+        flash(request, f"{msg} per «{sensor['name']}».")
+    return _back("sensori")
+
+
 @router.post("/sensori/{ieee}/rimuovi")
 def remove_sensor(request: Request, ieee: str):
     db = request.app.state.db
@@ -339,14 +352,7 @@ def gateway_save(request: Request, gid: int, name: str = Form(""), ip: str = For
         return _back("gateway")
     adapter = adapter if adapter in ("ember", "zstack", "deconz", "zigate") else "ember"
     name = _clean_name(name)
-    if name and name != gw.name:
-        try:
-            gateways.rename(request.app.state.data_dir, gw.id, name)
-        except (OSError, ValueError, KeyError, TypeError):
-            flash(request, "Impossibile rinominare: elenco gateway (gateways.json) assente o "
-                           "non valido. Esegui ./install.sh sul server.", "alarm")
-            return _back("gateway")
-        gw.name = name  # same object is shared with the MQTT service and monitor
+    # zigbee2mqtt config first: a failed write must not leave a half-saved gateway
     old = z2m_config.read_gateway(gw.config)
     changed = (old["ip"], old["port"], old["adapter"], old["channel"]) != \
         (ip, port_n, adapter, channel_n)
@@ -356,6 +362,14 @@ def gateway_save(request: Request, gid: int, name: str = Form(""), ip: str = For
         except OSError as exc:
             flash(request, f"Impossibile scrivere la configurazione zigbee2mqtt: {exc}", "alarm")
             return _back("gateway")
+    if name and name != gw.name:
+        try:
+            gateways.rename(request.app.state.data_dir, gw.id, name)
+        except (OSError, ValueError, KeyError, TypeError):
+            flash(request, "Impossibile rinominare: elenco gateway (gateways.json) assente o "
+                           "non valido. Esegui ./install.sh sul server.", "alarm")
+            return _back("gateway")
+        gw.name = name  # same object is shared with the MQTT service and monitor
     db.add_event(utcnow(), None, "CONFIG",
                  f"Gateway {gw.name}: {ip}:{port_n}, adapter {adapter}, canale {channel_n}")
     if not changed:
