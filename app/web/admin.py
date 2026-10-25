@@ -8,10 +8,10 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
-from app import archive, notifier, settings, z2m_config
+from app import archive, gateways, notifier, settings, z2m_config
 from app.auth import hash_password, require_admin, verify_password
 from app.db import iso, utcnow
 from app.web import KIND_LABEL, flash, render
@@ -282,19 +282,36 @@ def email_test(request: Request):
 
 # ---------- gateway ----------
 
+def _gateway_or_404(request: Request, gid: int):
+    gw = gateways.by_id(request.app.state.gateways, gid)
+    if gw is None:
+        raise HTTPException(404, "Gateway sconosciuto")
+    return gw
+
+
 @router.get("/gateway")
 def gateway_page(request: Request):
     mqtt = _mqtt(request)
-    path = request.app.state.z2m_path
-    return _page(request, "gateway", "gateway.html", gw=z2m_config.read_gateway(path),
-                 config_exists=Path(path).exists(), mqtt=mqtt,
-                 devices=len(mqtt.state.devices) if mqtt else 0,
-                 frontend_url=f"http://{request.url.hostname}:8080")
+    counts = {r["gateway_id"]: r["n"] for r in request.app.state.db.query(
+        "SELECT gateway_id, COUNT(*) n FROM sensors WHERE active=1 GROUP BY gateway_id")}
+    rows = []
+    for g in request.app.state.gateways:
+        bs = mqtt.states.get(g.id) if mqtt else None
+        rows.append({"gw": g, "cfg": z2m_config.read_gateway(g.config),
+                     "config_exists": Path(g.config).exists(),
+                     "online": bool(mqtt and mqtt.connected and bs and bs.online),
+                     "version": bs.version if bs else "",
+                     "devices": len(bs.devices) if bs else 0,
+                     "sensors": counts.get(g.id, 0)})
+    return _page(request, "gateway", "gateway.html", rows=rows, mqtt=mqtt,
+                 multi=len(rows) > 1)
 
 
-@router.post("/gateway")
-def gateway_save(request: Request, ip: str = Form(""), port: str = Form("6638"),
-                 adapter: str = Form("ember"), channel: str = Form("11")):
+@router.post("/gateway/{gid}")
+def gateway_save(request: Request, gid: int, name: str = Form(""), ip: str = Form(""),
+                 port: str = Form("6638"), adapter: str = Form("ember"),
+                 channel: str = Form("11")):
+    gw = _gateway_or_404(request, gid)
     db = request.app.state.db
     ip = ip.strip()
     m = IP_RE.match(ip)
@@ -306,36 +323,51 @@ def gateway_save(request: Request, ip: str = Form(""), port: str = Form("6638"),
         flash(request, "Porta (1–65535) o canale (11–26) non validi.", "alarm")
         return _back("gateway")
     adapter = adapter if adapter in ("ember", "zstack", "deconz", "zigate") else "ember"
-    path = request.app.state.z2m_path
-    old = z2m_config.read_gateway(path)
-    try:
-        z2m_config.write_gateway(path, ip, port_n, adapter, channel_n)
-    except OSError as exc:
-        flash(request, f"Impossibile scrivere la configurazione zigbee2mqtt: {exc}", "alarm")
-        return _back("gateway")
+    name = _clean_name(name)
+    if name and name != gw.name:
+        try:
+            gateways.rename(request.app.state.data_dir, gw.id, name)
+        except (OSError, ValueError, KeyError, TypeError):
+            flash(request, "Impossibile rinominare: elenco gateway (gateways.json) assente o "
+                           "non valido. Esegui ./install.sh sul server.", "alarm")
+            return _back("gateway")
+        gw.name = name  # same object is shared with the MQTT service and monitor
+    old = z2m_config.read_gateway(gw.config)
+    changed = (old["ip"], old["port"], old["adapter"], old["channel"]) != \
+        (ip, port_n, adapter, channel_n)
+    if changed:
+        try:
+            z2m_config.write_gateway(gw.config, ip, port_n, adapter, channel_n)
+        except OSError as exc:
+            flash(request, f"Impossibile scrivere la configurazione zigbee2mqtt: {exc}", "alarm")
+            return _back("gateway")
     db.add_event(utcnow(), None, "CONFIG",
-                 f"Gateway: {ip}:{port_n}, adapter {adapter}, canale {channel_n}")
+                 f"Gateway {gw.name}: {ip}:{port_n}, adapter {adapter}, canale {channel_n}")
+    if not changed:
+        flash(request, "Gateway salvato.")
+        return _back("gateway")
     mqtt = _mqtt(request)
-    restarted = bool(mqtt and mqtt.restart_bridge(mqtt.gateways[0].id))
+    restarted = bool(mqtt and mqtt.restart_bridge(gw.id))
     msg = "Gateway salvato. " + ("zigbee2mqtt si sta riavviando." if restarted else
                                  "Riavvia zigbee2mqtt per applicare: "
-                                 "systemctl --user restart zigbee2mqtt")
+                                 f"systemctl --user restart {gw.container}")
     if old["channel"] != channel_n and old["ip"]:
         msg += " Attenzione: con il nuovo canale i sensori vanno riabbinati."
     flash(request, msg, "ok" if restarted else "warn")
     return _back("gateway")
 
 
-@router.post("/gateway/prova")
-def gateway_test(request: Request):
-    gw = z2m_config.read_gateway(request.app.state.z2m_path)
-    if not gw["ip"]:
-        flash(request, "Imposta prima l'indirizzo IP del gateway.", "warn")
-    elif z2m_config.test_connection(gw["ip"], gw["port"]):
-        flash(request, f"Gateway raggiungibile su {gw['ip']}:{gw['port']}.")
+@router.post("/gateway/{gid}/prova")
+def gateway_test(request: Request, gid: int):
+    gw = _gateway_or_404(request, gid)
+    cfg = z2m_config.read_gateway(gw.config)
+    if not cfg["ip"]:
+        flash(request, f"Imposta prima l'indirizzo IP del gateway {gw.name}.", "warn")
+    elif z2m_config.test_connection(cfg["ip"], cfg["port"]):
+        flash(request, f"{gw.name}: gateway raggiungibile su {cfg['ip']}:{cfg['port']}.")
     else:
-        flash(request, f"Nessuna risposta da {gw['ip']}:{gw['port']}. Controlla cavo, "
-                       "alimentazione e indirizzo IP del gateway.", "alarm")
+        flash(request, f"{gw.name}: nessuna risposta da {cfg['ip']}:{cfg['port']}. Controlla "
+                       "cavo, alimentazione e indirizzo IP del gateway.", "alarm")
     return _back("gateway")
 
 

@@ -256,3 +256,50 @@ def test_overview_single_gateway_unchanged(client, app):
 def test_footer_version(client):
     from app import __version__
     assert f"medMonitor v{__version__}" in client.get("/").text
+
+
+def _gateways_json(app, tmp_path):
+    import json
+
+    from app import gateways
+    data = {"gateways": [
+        {"id": 1, "name": "Ambiente 1", "base_topic": "zigbee2mqtt",
+         "config": str(tmp_path / "z1.yaml"), "frontend_port": 8080},
+        {"id": 2, "name": "Ambulatorio", "base_topic": "zigbee2mqtt_2",
+         "config": str(tmp_path / "z2.yaml"), "frontend_port": 8081}]}
+    (tmp_path / "gateways.json").write_text(json.dumps(data), encoding="utf-8")
+    app.state.gateways = gateways.load(tmp_path, tmp_path / "configuration.yaml")
+
+
+def test_gateway_table_lists_all(admin, app, tmp_path):
+    _gateways_json(app, tmp_path)
+    add_sensor(app.state.db, ieee="0x02", name="Frigo B", gateway_id=2)
+    html = admin.get("/impostazioni/gateway").text
+    assert "Ambiente 1" in html and "Ambulatorio" in html
+    assert "Ogni ambiente ha il suo gateway" in html
+    assert "ssh -L 8081:localhost:8081" in html
+    assert 'action="/impostazioni/gateway/2"' in html
+    assert 'action="/impostazioni/gateway/2/prova"' in html
+
+
+def test_gateway_edit_writes_own_yaml(admin, app, tmp_path):
+    import json
+    _gateways_json(app, tmp_path)
+    r = admin.post("/impostazioni/gateway/2", data={
+        "name": "Laboratorio", "ip": "192.168.1.61", "port": "6638", "adapter": "ember",
+        "channel": "15"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert "192.168.1.61" in (tmp_path / "z2.yaml").read_text(encoding="utf-8")
+    assert not (tmp_path / "z1.yaml").exists()
+    saved = json.loads((tmp_path / "gateways.json").read_text(encoding="utf-8"))
+    assert [g["name"] for g in saved["gateways"]] == ["Ambiente 1", "Laboratorio"]
+    assert app.state.gateways[1].name == "Laboratorio"
+    ev = app.state.db.one("SELECT message FROM events WHERE type='CONFIG' ORDER BY id DESC")
+    assert "Laboratorio" in ev["message"] and "192.168.1.61" in ev["message"]
+
+
+def test_gateway_unknown_404(admin, app, tmp_path):
+    _gateways_json(app, tmp_path)
+    form = {"ip": "192.168.1.61", "port": "6638", "adapter": "ember", "channel": "11"}
+    assert admin.post("/impostazioni/gateway/9", data=form).status_code == 404
+    assert admin.post("/impostazioni/gateway/9/prova").status_code == 404

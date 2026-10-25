@@ -176,6 +176,8 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); out
 .btn-danger:hover { border-color: var(--alarm); opacity: 1; }
 .btn-small { min-height: 32px; padding: 4px 10px; font-size: .875rem; }
 .inline { display: inline; margin: 0; }
+summary { cursor: pointer; }
+summary h2 { font-size: 1.2rem; }
 
 /* ---------- segmented periods ---------- */
 .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-s); overflow: hidden; background: var(--surface); }
