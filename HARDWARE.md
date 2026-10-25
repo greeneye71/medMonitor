@@ -11,6 +11,10 @@ nessun passthrough USB.
   dalla pagina web del dongle. Vedi [INSTALL.md](INSTALL.md), passo 2.
 - Posizionalo in un punto centrale rispetto ai frigoriferi: le pareti metalliche
   dei frigoriferi attenuano molto il segnale Zigbee.
+- **Un Dongle-M per ambiente**: un gateway copre un'area limitata, quindi ogni ambiente
+  lontano dagli altri ha il suo, collegato alla rete Ethernet, con il suo **IP fisso** e la sua
+  rete Zigbee. Tutti nella stessa LAN della VM; pensato per 1–6 gateway.
+  Si aggiungono con `./install.sh` ([INSTALL.md](INSTALL.md), "Aggiungere un ambiente").
 
 ## Sensori: SONOFF SNZB-02LD
 
@@ -24,6 +28,7 @@ Sensore di temperatura Zigbee con sonda esterna a cavo e display.
 
 Altri sensori di temperatura supportati da zigbee2mqtt funzionano se pubblicano
 il campo `temperature` (e opzionalmente `battery`), ma sono stati provati solo gli SNZB-02LD.
+Previsti in futuro: **SNZB-02M** e **SNZB-02UL**, da verificare quando disponibili.
 
 ## VM Fedora
 
@@ -33,7 +38,7 @@ il campo `temperature` (e opzionalmente `battery`), ma sono stati provati solo g
 | CPU | 1 vCPU (2 consigliate) |
 | RAM | 2 GB |
 | Disco | 10 GB liberi |
-| Rete | stessa LAN del Dongle-M (TCP 6638 raggiungibile), SMTP in uscita |
+| Rete | stessa LAN dei Dongle-M (TCP 6638 raggiungibile), SMTP in uscita |
 
 Spazio: il database tiene solo gli ultimi 180 giorni (modificabile), il resto va
 nell'archivio CSV, che cresce di circa 200 KB al mese per sensore.

@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.1.0 — Più gateway (uno per ambiente)
+- Un gateway SONOFF Dongle-M per ogni ambiente, tutti nella stessa medMonitor. Registro in
+  `~/medmonitor-data/app/gateways.json`; ogni gateway ha il suo container `zigbee2mqtt-N`, la sua rete Zigbee e il suo canale.
+- `install.sh`: menu per aggiungere e rimuovere gateway (canale e porta assegnati in automatico,
+  id mai riusati, cartella del gateway rimosso conservata); migrazione automatica da v2.0.
+- Panoramica divisa per ambiente con stato del gateway; Storico ed Eventi mostrano l'ambiente.
+- Impostazioni → Gateway: elenco dei gateway, modifica di nome/IP/canale per gateway, riavvio solo del gateway modificato.
+- Abbinamento sul gateway scelto; un sensore resettato e riabbinato su un altro gateway viene spostato tenendo nome, soglie e storico.
+- Allarme email "gateway non raggiungibile"; durante il guasto niente email offline dei suoi sensori, conteggio azzerato al ritorno.
+- Email con il nome dell'ambiente quando i gateway sono più di uno.
+- `/health` con lo stato di ogni gateway (`gateways`).
+- Con un solo gateway UI ed email restano come in v2.0.
+
 ## v2.0.0 — Riscrittura per Fedora + Podman
 Riscrittura completa e semplificata. La v1 (Dash, TinyFlux/TimescaleDB, Windows) non è più supportata;
 la sua documentazione è in `docs/old/`.
